@@ -95,6 +95,37 @@ function WrapperLoopback.DownloadFile(name, type, resource)
 	})
 end
 
+function WrapperLoopback.GetModdedMaps()
+	local Configuration = WG.Chobby and WG.Chobby.Configuration
+
+	if not Configuration then
+		return
+	end
+
+	local serverAddress = Configuration:GetServerAddress()
+
+	if not serverAddress then
+		return
+	end
+
+	if not string.find(
+		serverAddress,
+		"moddedbar.duckdns.org",
+		1,
+		true
+	) then
+		return
+	end
+
+	Spring.Echo(
+		"MODDED MAP CATALOG: requesting map catalogue"
+	)
+
+	WG.Connector.Send("GetModdedMaps", {
+		serverAddress = serverAddress
+	})
+end
+
 -- Starts a new spring instance, generally to play replays.
 function WrapperLoopback.StartNewSpring(args)
 	WG.Connector.Send("StartNewSpring", args)
@@ -145,6 +176,8 @@ end
 local SkippingFile_PREFIX = "Skipping "
 local SkippingFile_SUFFIX = ": already exists."
 local download, dlIndex
+local lastMapCatalogServer = nil
+
 -- reports that download has ended/was aborted
 local function DownloadFinished(command)
 	if not command.name then
@@ -234,6 +267,96 @@ local function ReplayInfo(command)
 	)
 end
 
+local function ModdedMaps(command)
+	if not command then
+		return
+	end
+
+	if command.error then
+		Spring.Log(
+			"Chobby",
+			LOG.ERROR,
+			"Failed to get Modded BAR maps: " .. command.error
+		)
+		return
+	end
+
+	local maps = command.maps
+
+	if not maps then
+		return
+	end
+
+	local Configuration =
+		WG.Chobby and WG.Chobby.Configuration
+
+	if (
+		not Configuration or
+		not Configuration.gameConfig or
+		not Configuration.gameConfig.mapDetails
+	) then
+		Spring.Log(
+			"Chobby",
+			LOG.ERROR,
+			"MODDED MAP CATALOG: mapDetails unavailable"
+		)
+		return
+	end
+
+	local mapDetails =
+		Configuration.gameConfig.mapDetails
+
+	local added = 0
+
+	for _, map in ipairs(maps) do
+		local mapName = map.springname
+
+		if mapName then
+			mapDetails[mapName] = {
+				Width = tonumber(map.width) or 0,
+				Height = tonumber(map.height) or 0,
+
+				Is1v1 = map.is1v1 and 1 or nil,
+				IsTeam = (
+					map.isTeam == nil or map.isTeam
+				) and 1 or nil,
+				IsFFA = map.isFFA and 1 or nil,
+
+				IsCertified = 1,
+				IsInPool = 1,
+
+				Special = map.special or "Modded",
+
+				Flat = map.flat and 1 or nil,
+				Hills = map.hills and 1 or nil,
+				Water = map.water and 1 or nil,
+
+				PlayerCount =
+					tostring(map.playerCount or "?"),
+
+				TeamCount =
+					tostring(map.teamCount or "2"),
+
+				Author =
+					map.author or "RandomGuy",
+
+				InfoText =
+					map.infoText or
+					"Custom Modded BAR map.",
+
+				LastUpdate = 0,
+			}
+
+			added = added + 1
+		end
+	end
+
+	Spring.Echo(
+		"MODDED MAP CATALOG: injected " ..
+		added ..
+		" map(s)"
+	)
+end
 
 -- init
 function widget:Initialize()
@@ -249,4 +372,35 @@ function widget:Initialize()
 	WG.Connector.Register('ParseMiniMapFinished', ParseMiniMapFinished)
 	WG.Connector.Register('DownloadProgress', DownloadProgress)
 	WG.Connector.Register('DownloadFinished', DownloadFinished)
+	WG.Connector.Register('ModdedMaps', ModdedMaps)
+end
+
+function widget:Update()
+	local Configuration =
+		WG.Chobby and WG.Chobby.Configuration
+
+	if not Configuration then
+		return
+	end
+
+	local serverAddress =
+		Configuration:GetServerAddress()
+
+	if serverAddress == lastMapCatalogServer then
+		return
+	end
+
+	lastMapCatalogServer = serverAddress
+
+	if (
+		serverAddress and
+		string.find(
+			serverAddress,
+			"moddedbar.duckdns.org",
+			1,
+			true
+		)
+	) then
+		WrapperLoopback.GetModdedMaps()
+	end
 end
