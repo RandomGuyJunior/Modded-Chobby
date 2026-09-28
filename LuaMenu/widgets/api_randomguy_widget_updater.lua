@@ -28,6 +28,7 @@ local widgets = {
 
 local installDir = "LuaUI/Widgets/"
 local stagingDir = "LuaUI/Widgets/.randomguy_updates/"
+local bundledDir = "LuaMenu/randomguy_widget_sources/"
 local started = false
 local pending = {}
 local listenerRegistered = false
@@ -129,6 +130,29 @@ local function onDownloadFinished(_, _, name, fileType)
 	installDownloaded(spec, name)
 end
 
+local function ensureBundledFallbacks()
+	for i = 1, #widgets do
+		local spec = widgets[i]
+		local finalPath = installDir .. spec.filename
+		if not readFile(finalPath) then
+			local bundled = VFS.LoadFile(bundledDir .. spec.filename)
+			if bundled
+				and string.find(bundled, "function widget:GetInfo", 1, true)
+				and string.find(bundled, spec.marker, 1, true)
+			then
+				local ok, err = writeFile(finalPath, bundled)
+				if ok then
+					Echo("Installed bundled fallback", spec.filename)
+				else
+					Echo("Could not install bundled fallback", spec.filename, tostring(err))
+				end
+			else
+				Echo("Bundled fallback missing or invalid:", spec.filename)
+			end
+		end
+	end
+end
+
 local function queueUpdates()
 	if started then
 		return
@@ -142,6 +166,8 @@ local function queueUpdates()
 	end
 
 	started = true
+
+	ensureBundledFallbacks()
 
 	if not listenerRegistered then
 		WG.DownloadHandler.AddListener("DownloadFinished", onDownloadFinished)
