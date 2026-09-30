@@ -2,10 +2,10 @@ local widget = widget ---@type Widget
 
 function widget:GetInfo()
 	return {
-		name = "RandomGuy In-Game Widget Updater",
-		desc = "Keeps selected BAR LuaUI widgets synced from their upstream GitHub repositories",
+		name = "RandomGuy Widget Migration Cleanup",
+		desc = "Removes obsolete local copies of widgets now bundled by randomguy-hosting",
 		author = "RandomGuyJunior",
-		date = "2026-09-28",
+		date = "2026-09-30",
 		license = "GNU GPL, v2 or later",
 		layer = 100000,
 		enabled = true,
@@ -13,207 +13,32 @@ function widget:GetInfo()
 	}
 end
 
-local widgets = {
-	{
-		filename = "gui_gridmenu_teamcolor.lua",
-		url = "https://raw.githubusercontent.com/Armis71/BAR-Widgets-Public/main/gui_gridmenu_teamcolor.lua",
-		marker = 'name = "Grid menu (Team Color)"',
-	},
-	{
-		filename = "gui_info_teamcolor.lua",
-		url = "https://raw.githubusercontent.com/Armis71/BAR-Widgets-Public/main/gui_info_teamcolor.lua",
-		marker = 'name = "Info (Team Color)"',
-	},
+local obsoleteFiles = {
+	"LuaUI/Widgets/gui_gridmenu_teamcolor.lua",
+	"LuaUI/Widgets/gui_info_teamcolor.lua",
+	"LuaUI/Widgets/.randomguy_updates/gui_gridmenu_teamcolor.lua.download",
+	"LuaUI/Widgets/.randomguy_updates/gui_info_teamcolor.lua.download",
 }
 
-local installDir = "LuaUI/Widgets/"
-local stagingDir = "LuaUI/Widgets/.randomguy_updates/"
-local bundledDir = "LuaMenu/randomguy_widget_sources/"
-local started = false
-local pending = {}
-local listenerRegistered = false
-
-local function Echo(...)
-	Spring.Echo("[RandomGuy Widget Updater]", ...)
-end
-
-local function readFile(path)
+local function removeIfPresent(path)
 	local f = io.open(path, "rb")
 	if not f then
-		return nil
+		return false
 	end
-	local content = f:read("*all")
 	f:close()
-	return content
-end
 
-local function writeFile(path, content)
-	local f, err = io.open(path, "wb")
-	if not f then
-		return false, err
-	end
-	local ok, writeErr = f:write(content)
-	f:close()
-	if not ok then
-		return false, writeErr
-	end
-	return true
-end
-
-local function installDownloaded(spec, stagingPath)
-	local content = readFile(stagingPath)
-	if not content then
-		Echo("Downloaded file missing:", spec.filename)
-		return false
+	local ok, err = os.remove(path)
+	if ok then
+		Spring.Echo("[RandomGuy Widget Cleanup] Removed obsolete local widget copy:", path)
+		return true
 	end
 
-	if not string.find(content, "function widget:GetInfo", 1, true)
-		or not string.find(content, spec.marker, 1, true)
-	then
-		Echo("Refusing invalid upstream file:", spec.filename)
-		os.remove(stagingPath)
-		return false
-	end
-
-	local finalPath = installDir .. spec.filename
-	local newPath = finalPath .. ".new"
-	local backupPath = finalPath .. ".bak"
-
-	os.remove(newPath)
-	local ok, err = writeFile(newPath, content)
-	if not ok then
-		Echo("Could not stage", spec.filename, tostring(err))
-		os.remove(stagingPath)
-		return false
-	end
-
-	os.remove(backupPath)
-	local hadOld = readFile(finalPath) ~= nil
-	if hadOld then
-		local moved, moveErr = os.rename(finalPath, backupPath)
-		if not moved then
-			Echo("Could not backup", spec.filename, tostring(moveErr))
-			os.remove(newPath)
-			os.remove(stagingPath)
-			return false
-		end
-	end
-
-	local moved, moveErr = os.rename(newPath, finalPath)
-	if not moved then
-		Echo("Could not install", spec.filename, tostring(moveErr))
-		if hadOld then
-			os.rename(backupPath, finalPath)
-		end
-		os.remove(newPath)
-		os.remove(stagingPath)
-		return false
-	end
-
-	os.remove(backupPath)
-	os.remove(stagingPath)
-	Echo("Updated", spec.filename)
-	return true
-end
-
-local function onDownloadFinished(_, _, name, fileType)
-	if fileType ~= "resource" then
-		return
-	end
-
-	local spec = pending[name]
-	if not spec then
-		return
-	end
-
-	pending[name] = nil
-	installDownloaded(spec, name)
-end
-
-local function ensureBundledFallbacks()
-	for i = 1, #widgets do
-		local spec = widgets[i]
-		local finalPath = installDir .. spec.filename
-		if not readFile(finalPath) then
-			local bundled = VFS.LoadFile(bundledDir .. spec.filename)
-			if bundled
-				and string.find(bundled, "function widget:GetInfo", 1, true)
-				and string.find(bundled, spec.marker, 1, true)
-			then
-				local ok, err = writeFile(finalPath, bundled)
-				if ok then
-					Echo("Installed bundled fallback", spec.filename)
-				else
-					Echo("Could not install bundled fallback", spec.filename, tostring(err))
-				end
-			else
-				Echo("Bundled fallback missing or invalid:", spec.filename)
-			end
-		end
-	end
-end
-
-local function queueUpdates()
-	if started then
-		return
-	end
-
-	if not (WG.DownloadHandler
-		and WG.DownloadHandler.QueueDownload
-		and WG.DownloadHandler.AddListener)
-	then
-		return
-	end
-
-	started = true
-
-	ensureBundledFallbacks()
-
-	if not listenerRegistered then
-		WG.DownloadHandler.AddListener("DownloadFinished", onDownloadFinished)
-		listenerRegistered = true
-	end
-
-	for i = 1, #widgets do
-		local spec = widgets[i]
-		local stagingPath = stagingDir .. spec.filename .. ".download"
-
-		-- The launcher's resource downloader intentionally skips destinations
-		-- that already exist, so remove only our disposable staging copy.
-		-- The currently installed widget remains untouched until validation
-		-- and installation succeed.
-		os.remove(stagingPath)
-		pending[stagingPath] = spec
-
-		WG.DownloadHandler.QueueDownload(
-			stagingPath,
-			"resource",
-			-1,
-			2,
-			{
-				url = spec.url,
-				destination = stagingPath,
-				extract = false,
-				hidden = true,
-			}
-		)
-	end
-
-	Echo("Checking", #widgets, "upstream widget(s) for updates")
+	Spring.Echo("[RandomGuy Widget Cleanup] Could not remove", path, tostring(err))
+	return false
 end
 
 function widget:Initialize()
-	queueUpdates()
-end
-
-function widget:Update()
-	if not started then
-		queueUpdates()
-	end
-end
-
-function widget:Shutdown()
-	if listenerRegistered and WG.DownloadHandler and WG.DownloadHandler.RemoveListener then
-		WG.DownloadHandler.RemoveListener("DownloadFinished", onDownloadFinished)
+	for i = 1, #obsoleteFiles do
+		removeIfPresent(obsoleteFiles[i])
 	end
 end
