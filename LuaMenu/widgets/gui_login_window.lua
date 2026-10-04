@@ -43,6 +43,62 @@ local wantLoginStatus = {
 	["disconnected"] = true,
 }
 
+local function IsRandomGuyServer()
+	local Configuration = WG.Chobby and WG.Chobby.Configuration
+	if not Configuration or not Configuration.GetServerAddress then
+		return false
+	end
+
+	local address = tostring(Configuration:GetServerAddress() or "")
+	address = string.lower(address)
+	return address == "moddedbar.duckdns.org"
+end
+
+local function HideRandomGuyRegistrationKeyword(loginWindow)
+	if not loginWindow or not IsRandomGuyServer() then
+		return
+	end
+
+	local controls = {
+		loginWindow.altAcknowlegementLabel,
+		loginWindow.TextAcknowledgementBox,
+		loginWindow.btnDiscord,
+	}
+
+	for i = 1, #controls do
+		local control = controls[i]
+		if control then
+			if control.SetVisibility then
+				control:SetVisibility(false)
+			else
+				control.visible = false
+			end
+		end
+	end
+
+	-- BAR requires a moderation/Discord keyword when creating another
+	-- account. RandomGuy does not use that moderation workflow, so bypass
+	-- only that check while connected to the RandomGuy server.
+	local originalTryRegister = loginWindow.tryRegister
+	if originalTryRegister and not loginWindow.randomGuyTryRegisterWrapped then
+		loginWindow.tryRegister = function(self, ...)
+			local Configuration = WG.Chobby.Configuration
+			local oldFirstLoginEver = Configuration.firstLoginEver
+			Configuration.firstLoginEver = true
+
+			local results = {pcall(originalTryRegister, self, ...)}
+			Configuration.firstLoginEver = oldFirstLoginEver
+
+			local ok = table.remove(results, 1)
+			if not ok then
+				error(results[1])
+			end
+			return unpack(results)
+		end
+		loginWindow.randomGuyTryRegisterWrapped = true
+	end
+end
+
 local function GetNewLoginWindow(failFunc, callerInfo)
 	if currentLoginWindow and currentLoginWindow.window then
 		currentLoginWindow.window:Dispose()
@@ -59,6 +115,7 @@ local function GetNewLoginWindow(failFunc, callerInfo)
 		currentLoginWindow = WG.Chobby.SteamLoginWindow(failFunc, nil, "main_window")
 	else
 		currentLoginWindow = WG.Chobby.LoginWindow(failFunc, nil, "main_window", {loginAfterRegister = true, emailRequired = emailRequired})
+		HideRandomGuyRegistrationKeyword(currentLoginWindow)
 	end
 	return currentLoginWindow
 end
