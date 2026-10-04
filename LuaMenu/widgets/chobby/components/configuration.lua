@@ -1175,17 +1175,13 @@ function Configuration:GetPlayerName(allowBlank)
 end
 
 function Configuration:GetDefaultGameName()
-	local rapidTag = "byar:test"
+	-- Modded Chobby's local/offline skirmish should run the RandomGuy
+	-- hosting mutator rather than plain byar:test. The mutator itself depends
+	-- on byar:test, so normal BAR remains the underlying game.
+	local rapidTag = "randomguy-hosting:test"
 	if not self.gameConfig then
 		Spring.Log(LOG_SECTION, LOG.ERROR, "self.gameConfig not present in Configuration:GetDefaultGameName()")
 		return false
-	end
-	
-	if self.gameConfig and self.gameConfig._defaultGameRapidTag then 
-		rapidTag = self.gameConfig._defaultGameRapidTag
-	else
-		Spring.Log(LOG_SECTION, LOG.ERROR, "self.gameConfig._defaultGameRapidTag not present in Configuration:GetDefaultGameName(), using: Beyond All Reason $VERSION")
-		return "Beyond All Reason $VERSION"
 	end
 
 	if rapidTag and VFS.GetNameFromRapidTag then
@@ -1195,7 +1191,9 @@ function Configuration:GetDefaultGameName()
 		end
 	end
 
-	return self.gameConfig._defaultGameArchiveName
+	-- The launcher normally pre-downloads this tag, but keep the Rapid tag as
+	-- the fallback so the local battle/download path can still resolve it.
+	return rapidTag
 end
 
 function Configuration:GetSideData()
