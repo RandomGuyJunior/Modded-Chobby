@@ -24,6 +24,7 @@ local onlineCountText
 local serverCombo
 local serverSwitchPending = false
 local serverReconnectStarted = false
+local startupServerSynced = false
 
 local function GetServerSelectionFromAddress(address)
 	address = string.lower(tostring(address or ""))
@@ -536,9 +537,13 @@ local onlineCountLastUpdate = 0
 function widget:Update()
 	local newStatus = lobby:GetConnectionStatus()
 
-	-- The saved server address can be restored after this widget creates its
-	-- controls. Keep the dropdown aligned with the actual runtime target.
-	SyncServerComboToCurrentServer()
+	-- On startup, synchronize the dropdown once after the lobby has actually
+	-- connected. After that, the dropdown is driven only by normal user/server
+	-- switch flow.
+	if not startupServerSynced and newStatus == "connected" then
+		SyncServerComboToCurrentServer()
+		startupServerSynced = true
+	end
 		
 	if serverSwitchPending then
 
