@@ -25,6 +25,37 @@ local serverCombo
 local serverSwitchPending = false
 local serverReconnectStarted = false
 
+local function GetServerSelectionFromAddress(address)
+	address = string.lower(tostring(address or ""))
+	if address == "moddedbar.duckdns.org" then
+		return 2
+	end
+	return 1
+end
+
+local function SyncServerComboToCurrentServer()
+	if not serverCombo
+			or not WG.Chobby
+			or not WG.Chobby.Configuration then
+		return
+	end
+
+	local selected =
+		GetServerSelectionFromAddress(
+			WG.Chobby.Configuration:GetServerAddress()
+		)
+
+	if serverCombo.selected == selected then
+		return
+	end
+
+	-- Do not call ComboBox:Select here: it fires OnSelect and would
+	-- initiate a server switch. This is display-state synchronization only.
+	serverCombo.selected = selected
+	serverCombo.caption = serverCombo.items[selected]
+	serverCombo:Invalidate()
+end
+
 
 local IMAGE_DIR          = LUA_DIRNAME .. "images/"
 local IMAGE_ONLINE       = IMAGE_DIR .. "online.png"
@@ -240,11 +271,8 @@ local function InitializeControls(window)
 	local currentServerAddress =
 		WG.Chobby.Configuration:GetServerAddress()
 
-	local selectedServer = 1
-
-	if currentServerAddress == "moddedbar.duckdns.org" then
-		selectedServer = 2
-	end
+	local selectedServer =
+		GetServerSelectionFromAddress(currentServerAddress)
 
 	menuX = menuX + 3
 
@@ -507,6 +535,10 @@ local onlineCountLastUpdate = 0
 
 function widget:Update()
 	local newStatus = lobby:GetConnectionStatus()
+
+	-- The saved server address can be restored after this widget creates its
+	-- controls. Keep the dropdown aligned with the actual runtime target.
+	SyncServerComboToCurrentServer()
 		
 	if serverSwitchPending then
 
