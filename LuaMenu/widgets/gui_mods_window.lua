@@ -320,6 +320,15 @@ function ModsWindow.GetControl()
 end
 
 function widget:Initialize()
+	-- Chobby's Chili classes (Control, Label, Button, ScrollPanel, StackPanel,
+	-- etc.) are exported by this header. Without it GetControl() can abort the
+	-- entire interface root while it is being constructed.
+	VFS.Include(
+		LUA_DIRNAME .. "widgets/chobby/headers/exports.lua",
+		nil,
+		VFS.RAW_FIRST
+	)
+
 	WG.ModsWindow = ModsWindow
 	if WG.DownloadHandler and WG.DownloadHandler.AddListener then
 		WG.DownloadHandler.AddListener("DownloadFinished", onDownloadFinished)
