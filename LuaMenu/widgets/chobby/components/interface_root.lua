@@ -482,7 +482,12 @@ function GetInterfaceRoot(optionsParent, mainWindowParent, fontFunction)
 	rightPanelTabs[#rightPanelTabs + 1] = {name = "downloads", control = WG.DownloadWindow.GetControl()}
 	rightPanelTabs[#rightPanelTabs + 1] = {name = "plugins", control = WG.PluginsWindow.GetControl()}
 	if WG.ModsWindow and WG.ModsWindow.GetControl then
-		rightPanelTabs[#rightPanelTabs + 1] = {name = "mods", control = WG.ModsWindow.GetControl()}
+		local ok, modsControl = pcall(WG.ModsWindow.GetControl)
+		if ok and modsControl then
+			rightPanelTabs[#rightPanelTabs + 1] = {name = "mods", control = modsControl}
+		elseif not ok then
+			Spring.Echo("[ModsWindow] Failed to create Mods panel: " .. tostring(modsControl))
+		end
 	end
 
 	local battleListWindow, battleListWindowJoinBattle = WG.BattleListWindowHolder.GetControl()
