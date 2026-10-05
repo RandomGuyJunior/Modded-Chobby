@@ -231,7 +231,7 @@ local function onDownloadFinished(_, name, fileType)
 	end
 end
 
-local function onDownloadFailed(_, name)
+local function onDownloadFailed(_, _, name)
 	if name == CATALOG_DOWNLOAD then
 		if statusLabel then
 			statusLabel:SetCaption("Failed to download mod catalog.")
