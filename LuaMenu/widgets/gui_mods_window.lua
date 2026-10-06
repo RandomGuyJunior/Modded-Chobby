@@ -149,7 +149,6 @@ local function rebuildSkirmishStack()
 		return
 	end
 
-	VFS.ScanAllDirs()
 	generatedGameName = stackName
 	Spring.Echo("[ModsWindow] Skirmish mod stack: " .. stackName)
 end
@@ -294,7 +293,6 @@ local function onDownloadFinished(_, name, fileType)
 			installing[id] = nil
 		end
 		saveState()
-		VFS.ScanAllDirs()
 		rebuildSkirmishStack()
 		refreshList()
 	end
@@ -310,7 +308,6 @@ local function onDownloadFailed(_, _, name)
 end
 
 function ModsWindow.GetSkirmishGameName()
-	if not generatedGameName then rebuildSkirmishStack() end
 	return generatedGameName
 end
 
