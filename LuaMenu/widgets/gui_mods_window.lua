@@ -160,6 +160,7 @@ end
 
 local function refreshList()
 	clearList()
+	if not listPanel then return end
 	local visible, active = 0, 0
 	for _, entry in ipairs(mods) do
 		if entry.enabled ~= false and entry.rapid_tag and entry.rapid_repo then
