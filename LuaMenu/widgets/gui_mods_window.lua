@@ -25,6 +25,7 @@ local statusLabel
 local mods = {}
 local installing = {}
 local enabledState = {}
+local installedState = {}
 local generatedGameName
 
 local function ensureDirectories()
@@ -55,26 +56,24 @@ end
 
 local function isInstalled(entry)
 	if not entry or not entry.rapid_tag then return false end
-	if VFS.GetNameFromRapidTag then
-		local resolved = VFS.GetNameFromRapidTag(entry.rapid_tag)
-		return resolved and resolved ~= ""
-	end
-	return false
+	local id = entry.id or entry.rapid_tag
+	return installedState[id] == true
 end
 
 local function loadState()
 	local content = readFile(STATE_PATH)
 	if not content or content == "" then return end
 	local ok, data = pcall(function() return json.decode(content) end)
-	if ok and type(data) == "table" and type(data.enabled) == "table" then
-		enabledState = data.enabled
+	if ok and type(data) == "table" then
+		if type(data.enabled) == "table" then enabledState = data.enabled end
+		if type(data.installed) == "table" then installedState = data.installed end
 	end
 end
 
 local function saveState()
 	ensureDirectories()
 	local ok, encoded = pcall(function()
-		return json.encode({schema_version = 1, enabled = enabledState})
+		return json.encode({schema_version = 1, installed = installedState, enabled = enabledState})
 	end)
 	if ok then
 		writeFile(STATE_PATH, encoded)
@@ -289,6 +288,7 @@ local function onDownloadFinished(_, name, fileType)
 
 	if fileType == "game" or fileType == "RAPID" then
 		for id in pairs(installing) do
+			installedState[id] = true
 			enabledState[id] = true
 			installing[id] = nil
 		end
