@@ -26,6 +26,7 @@ local mods = {}
 local installing = {}
 local enabledState = {}
 local installedState = {}
+local stateNeedsMigration = false
 local generatedGameName
 
 local function ensureDirectories()
@@ -66,7 +67,13 @@ local function loadState()
 	local ok, data = pcall(function() return json.decode(content) end)
 	if ok and type(data) == "table" then
 		if type(data.enabled) == "table" then enabledState = data.enabled end
-		if type(data.installed) == "table" then installedState = data.installed end
+		if type(data.installed) == "table" then
+			installedState = data.installed
+		else
+			-- State files created before Mod Hub tracked installation explicitly.
+			-- Migrate only known entries after the catalog is loaded.
+			stateNeedsMigration = true
+		end
 	end
 end
 
@@ -247,6 +254,18 @@ local function parseCatalog(content)
 		return false, "unsupported catalog schema"
 	end
 	mods = data.mods
+	if stateNeedsMigration then
+		for _, entry in ipairs(mods) do
+			local id = entry.id or entry.rapid_tag
+			-- Old state only contained entries the user had interacted with.
+			-- Preserve those known Mod Hub installs without scanning the filesystem.
+			if id and enabledState[id] ~= nil then
+				installedState[id] = true
+			end
+		end
+		stateNeedsMigration = false
+		saveState()
+	end
 	rebuildSkirmishStack()
 	refreshList()
 	return true
