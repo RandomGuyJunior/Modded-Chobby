@@ -214,7 +214,7 @@ local function refreshList()
 							Spring.Echo("[ModsWindow] DownloadHandler unavailable")
 							return
 						end
-						installing[id] = true
+						installing[id] = entry
 						button:SetCaption("Installing...")
 						button.enabled = false
 						button:Invalidate()
@@ -287,10 +287,27 @@ local function onDownloadFinished(_, name, fileType)
 	end
 
 	if fileType == "game" or fileType == "RAPID" then
-		for id in pairs(installing) do
-			installedState[id] = true
-			enabledState[id] = true
-			installing[id] = nil
+		local completedId
+		for id, entry in pairs(installing) do
+			if name == id or (type(entry) == "table" and name == entry.rapid_tag) then
+				completedId = id
+				break
+			end
+		end
+		-- Older DownloadHandler callbacks may not preserve our mod id/tag. If
+		-- exactly one Mod Hub install is pending, that game completion is it.
+		if not completedId then
+			local onlyId
+			for id in pairs(installing) do
+				if onlyId then onlyId = nil break end
+				onlyId = id
+			end
+			completedId = onlyId
+		end
+		if completedId then
+			installedState[completedId] = true
+			enabledState[completedId] = true
+			installing[completedId] = nil
 		end
 		saveState()
 		rebuildSkirmishStack()
