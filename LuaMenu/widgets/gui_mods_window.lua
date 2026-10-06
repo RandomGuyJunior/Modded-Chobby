@@ -278,7 +278,7 @@ local function fetchCatalog()
 	end
 end
 
-local function onDownloadFinished(_, name, fileType)
+local function onDownloadFinished(_, _, name, fileType)
 	if name == CATALOG_DOWNLOAD then
 		if not loadCatalogFromDisk() and statusLabel then
 			statusLabel:SetCaption("Could not read mod catalog.")
@@ -315,7 +315,7 @@ local function onDownloadFinished(_, name, fileType)
 	end
 end
 
-local function onDownloadFailed(_, _, name)
+local function onDownloadFailed(_, _, _, name)
 	if name == CATALOG_DOWNLOAD then
 		if statusLabel then statusLabel:SetCaption("Failed to download mod catalog.") end
 		return
