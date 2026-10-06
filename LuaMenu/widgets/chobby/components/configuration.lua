@@ -1175,9 +1175,17 @@ function Configuration:GetPlayerName(allowBlank)
 end
 
 function Configuration:GetDefaultGameName()
-	-- Modded Chobby's local/offline skirmish should run the RandomGuy
-	-- hosting mutator rather than plain byar:test. The mutator itself depends
-	-- on byar:test, so normal BAR remains the underlying game.
+	-- Local Skirmish uses a generated dependency stack when the player has
+	-- installed and enabled catalog mods. The stack depends on
+	-- randomguy-hosting:test plus every enabled mutator, so Recoil loads them
+	-- through its normal archive dependency mechanism.
+	if WG.ModsWindow and WG.ModsWindow.GetSkirmishGameName then
+		local stackGame = WG.ModsWindow.GetSkirmishGameName()
+		if stackGame then
+			return stackGame
+		end
+	end
+
 	local rapidTag = "randomguy-hosting:test"
 	if not self.gameConfig then
 		Spring.Log(LOG_SECTION, LOG.ERROR, "self.gameConfig not present in Configuration:GetDefaultGameName()")
@@ -1191,8 +1199,6 @@ function Configuration:GetDefaultGameName()
 		end
 	end
 
-	-- The launcher normally pre-downloads this tag, but keep the Rapid tag as
-	-- the fallback so the local battle/download path can still resolve it.
 	return rapidTag
 end
 
