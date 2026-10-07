@@ -289,6 +289,7 @@ local function fetchCatalog()
 				url = CATALOG_URL .. "?t=" .. os.time(),
 				destination = CATALOG_PATH,
 				extract = false,
+				overwrite = true,
 				hidden = true,
 			}
 		)
