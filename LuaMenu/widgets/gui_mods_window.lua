@@ -177,7 +177,6 @@ local function refreshList()
 			local title = entry.name or id
 			local description = entry.description or ""
 			local author = entry.author and ("By " .. entry.author) or ""
-			local rapidTag = entry.rapid_tag or ""
 
 			local card = Control:New {
 				width = "100%", height = 122, padding = {12, 10, 12, 10},
@@ -193,7 +192,7 @@ local function refreshList()
 			}
 			Label:New {
 				parent = card, x = 12, y = 58, right = 150, bottom = 8,
-				caption = description .. "\nRapid: " .. rapidTag,
+				caption = description .. "\nVersion: " .. tostring(entry.version or "Unknown"),
 				align = "left", valign = "top", font = {size = 13},
 			}
 
@@ -236,6 +235,11 @@ local function refreshList()
 			listPanel:AddChild(card)
 		end
 	end
+
+	-- ScrollPanel clips children to the StackPanel bounds. Give the stack an
+	-- explicit content height so added cards are actually visible and scrollable.
+	listPanel:SetPos(nil, nil, nil, math.max(1, visible * 130))
+	listPanel:Invalidate()
 
 	if statusLabel then
 		if visible == 0 then
@@ -374,7 +378,7 @@ function ModsWindow.GetControl()
 		parent = window, x = 8, y = 72, right = 8, bottom = 8, horizontalScrollbar = false,
 	}
 	listPanel = StackPanel:New {
-		parent = scroll, x = 0, y = 0, right = 0,
+		parent = scroll, x = 0, y = 0, right = 0, height = 1,
 		resizeItems = false, itemMargin = {0, 0, 0, 8},
 		itemPadding = {0, 0, 0, 0}, orientation = "vertical",
 	}
