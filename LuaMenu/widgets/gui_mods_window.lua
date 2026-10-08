@@ -24,6 +24,7 @@ local listPanel
 local statusLabel
 local mods = {}
 local installing = {}
+local downloadErrors = {}
 local enabledState = {}
 local installedState = {}
 local stateNeedsMigration = false
@@ -176,10 +177,13 @@ local function refreshList()
 			local id = entry.id or entry.rapid_tag or "unknown"
 			local title = entry.name or id
 			local description = entry.description or ""
+			if downloadErrors[id] then description = description .. "\nDownload failed: " .. downloadErrors[id] end
 			local author = entry.author and ("By " .. entry.author) or ""
 
-			local card = Control:New {
+			local card = Panel:New {
 				width = "100%", height = 122, padding = {12, 10, 12, 10},
+				borderColor = {0.48, 0.55, 0.65, 1},
+				backgroundColor = {0.12, 0.14, 0.18, 0.85},
 			}
 			Label:New {
 				parent = card, x = 12, y = 8, right = 150, height = 25,
@@ -220,6 +224,7 @@ local function refreshList()
 							Spring.Echo("[ModsWindow] DownloadHandler unavailable")
 							return
 						end
+						downloadErrors[id] = nil
 						installing[id] = entry
 						button:SetCaption("Installing...")
 						button.enabled = false
@@ -329,6 +334,7 @@ local function onDownloadFinished(_, _, name, fileType)
 			completedId = onlyId
 		end
 		if completedId then
+			downloadErrors[completedId] = nil
 			installedState[completedId] = true
 			enabledState[completedId] = true
 			installing[completedId] = nil
@@ -339,13 +345,21 @@ local function onDownloadFinished(_, _, name, fileType)
 	end
 end
 
-local function onDownloadFailed(_, _, _, name)
+local function onDownloadFailed(_, _, reason, name, fileType)
 	if name == CATALOG_DOWNLOAD then
 		if statusLabel then statusLabel:SetCaption("Failed to download mod catalog.") end
 		return
 	end
-	for id in pairs(installing) do installing[id] = nil end
-	refreshList()
+	if fileType ~= "game" then return end
+	for id, entry in pairs(installing) do
+		if name == entry.rapid_tag then
+			installing[id] = nil
+			downloadErrors[id] = tostring(reason or "unknown error")
+			Spring.Echo("[ModsWindow] Download failed for " .. tostring(name) .. ": " .. downloadErrors[id] .. ". Check launcher log for pr-downloader details.")
+			refreshList()
+			return
+		end
+	end
 end
 
 function ModsWindow.GetSkirmishGameName()
