@@ -169,7 +169,7 @@ local function refreshList()
 	if not listPanel then return end
 	local visible, active = 0, 0
 	for _, entry in ipairs(mods) do
-		if entry.enabled ~= false and entry.rapid_tag and entry.rapid_repo then
+		if entry.enabled ~= false and entry.rapid_tag and entry.rapid_tag:match("^dev%-mods:[%w_%-]+$") then
 			visible = visible + 1
 			local installed = isInstalled(entry)
 			local enabled = installed and isEnabled(entry)
@@ -216,7 +216,7 @@ local function refreshList()
 							return
 						end
 						if installing[id] then return end
-						if not (entry.rapid_tag and entry.rapid_repo) then
+						if not (entry.rapid_tag and entry.rapid_tag:match("^dev%-mods:[%w_%-]+$")) then
 							Spring.Echo("[ModsWindow] Invalid catalog entry: " .. tostring(id))
 							return
 						end
@@ -231,9 +231,9 @@ local function refreshList()
 						button:Invalidate()
 						WG.DownloadHandler.QueueDownload(
 							entry.rapid_tag, "game", -1, 0,
-							{rapidRepo = entry.rapid_repo, modId = id}
+							{modId = id}
 						)
-						Spring.Echo("[ModsWindow] Installing " .. entry.rapid_tag .. " from " .. entry.rapid_repo)
+						Spring.Echo("[ModsWindow] Installing trusted Rapid mod " .. entry.rapid_tag)
 					end
 				},
 			}
