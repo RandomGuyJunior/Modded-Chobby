@@ -212,6 +212,52 @@ local function rebuildSkirmishStack()
 	Spring.Echo("[ModsWindow] Skirmish mod stack: " .. stackName)
 end
 
+-- Catalog dependencies are mod ids or exact dev-mods Rapid tags.
+-- Resolve the full closure before downloading anything.
+local function dependencyPlan(root)
+	local byId, byTag, ordered, visiting, visited = {}, {}, {}, {}, {}
+	for _, item in ipairs(mods) do
+		if item.id then byId[item.id] = item end
+		if item.rapid_tag then byTag[item.rapid_tag] = item end
+	end
+	local function visit(item)
+		local id = item.id or item.rapid_tag
+		if visiting[id] then error("Circular mod dependency involving " .. tostring(id)) end
+		if visited[id] then return end
+		if item.enabled == false or type(item.rapid_tag) ~= "string" or
+			not item.rapid_tag:match("^dev%-mods:[%w_%-]+$") then
+			error("Invalid or disabled dependency: " .. tostring(id))
+		end
+		visiting[id] = true
+		local deps = item.dependencies or {}
+		if type(deps) ~= "table" then error("Invalid dependencies for " .. tostring(id)) end
+		for _, ref in ipairs(deps) do
+			local dep = byId[ref] or byTag[ref]
+			if not dep then error("Missing catalog dependency " .. tostring(ref) .. " for " .. tostring(id)) end
+			visit(dep)
+		end
+		visiting[id] = nil
+		visited[id] = true
+		if not isInstalled(item) then ordered[#ordered + 1] = item end
+	end
+	visit(root)
+	return ordered
+end
+
+local installQueue = {}
+local installRootId
+local function startNextInstall()
+	if #installQueue == 0 then
+		installRootId = nil
+		return
+	end
+	local entry = table.remove(installQueue, 1)
+	local id = entry.id or entry.rapid_tag
+	installing[id] = entry
+	WG.DownloadHandler.QueueDownload(entry.rapid_tag, "game", -1, 0, {modId = id})
+	Spring.Echo("[ModsWindow] Installing Rapid mod " .. entry.rapid_tag)
+end
+
 local function uninstallMod(entry)
 	local id = entry.id or entry.rapid_tag
 	if not isInstalled(entry) or installing[id] or pendingUninstall[id] then return end
@@ -336,16 +382,22 @@ refreshList = function()
 							Spring.Echo("[ModsWindow] DownloadHandler unavailable")
 							return
 						end
+						if installRootId then
+							downloadErrors[id] = "Another mod installation is in progress."
+							refreshList()
+							return
+						end
+						local ok, plan = pcall(dependencyPlan, entry)
+						if not ok then
+							downloadErrors[id] = tostring(plan)
+							refreshList()
+							return
+						end
 						downloadErrors[id] = nil
-						installing[id] = entry
-						button:SetCaption("Installing...")
-						button.enabled = false
-						button:Invalidate()
-						WG.DownloadHandler.QueueDownload(
-							entry.rapid_tag, "game", -1, 0,
-							{modId = id}
-						)
-						Spring.Echo("[ModsWindow] Installing trusted Rapid mod " .. entry.rapid_tag)
+						installRootId = id
+						installQueue = plan
+						startNextInstall()
+						refreshList()
 					end
 				},
 			}
@@ -495,6 +547,7 @@ local function onDownloadFinished(_, _, name, fileType)
 				local entry = installing[completedId]
 				if entry then installedVersions[completedId] = archiveVersion(entry) end
 				installing[completedId] = nil
+				if installRootId then startNextInstall() end
 			end
 		end
 		saveState()
@@ -520,6 +573,11 @@ local function onDownloadFailed(_, _, reason, name, fileType)
 	for id, entry in pairs(installing) do
 		if name == entry.rapid_tag then
 			installing[id] = nil
+			if installRootId then
+				downloadErrors[installRootId] = "Dependency installation failed (" .. tostring(id) .. "): " .. tostring(reason or "unknown error")
+				installQueue = {}
+				installRootId = nil
+			end
 			downloadErrors[id] = tostring(reason or "unknown error")
 			Spring.Echo("[ModsWindow] Download failed for " .. tostring(name) .. ": " .. downloadErrors[id] .. ". Check launcher log for pr-downloader details.")
 			refreshList()
