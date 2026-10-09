@@ -349,8 +349,10 @@ refreshList = function()
 			}
 			if installed then
 				Button:New {
-					parent = card, right = 12, y = 36, width = 120, height = 42,
-					caption = "Uninstall",
+					parent = card, right = 8, y = 6, width = 32, height = 28,
+					caption = "X",
+					tooltip = "Uninstall " .. title .. " (delete mod files)",
+					font = {size = 18},
 					backgroundColor = {0.45, 0.18, 0.18, 0.95},
 					enabled = not installing[id] and not pendingUninstall[id],
 					OnClick = {function() uninstallMod(entry) end},
