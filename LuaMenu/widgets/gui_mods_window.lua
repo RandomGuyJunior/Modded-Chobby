@@ -205,6 +205,9 @@ local function refreshList()
 				parent = card, right = 12, y = 36, width = 125, height = 42,
 				caption = installed and (enabled and "Enabled" or "Disabled")
 					or (installing[id] and "Installing..." or "Install"),
+				backgroundColor = installed
+					and (enabled and {0.16, 0.48, 0.22, 0.95} or {0.57, 0.17, 0.17, 0.95})
+					or {0.20, 0.24, 0.30, 0.95},
 				enabled = installed or not installing[id],
 				OnClick = {
 					function()
