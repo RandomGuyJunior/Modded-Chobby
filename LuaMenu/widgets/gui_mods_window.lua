@@ -29,6 +29,7 @@ local enabledState = {}
 local installedState = {}
 local installedVersions = {}
 local updateChecks = {}
+local pendingUninstall = {}
 local stateNeedsMigration = false
 local generatedGameName
 
@@ -208,6 +209,24 @@ local function rebuildSkirmishStack()
 	Spring.Echo("[ModsWindow] Skirmish mod stack: " .. stackName)
 end
 
+local function uninstallMod(entry)
+	local id = entry.id or entry.rapid_tag
+	if not isInstalled(entry) or installing[id] then return end
+	-- Remove this mod from the managed installation set and active stack.
+	-- Rapid package data may remain in the shared cache; never delete shared
+	-- pool files from Chobby because other games can depend on them.
+	installedState[id] = nil
+	enabledState[id] = nil
+	installedVersions[id] = nil
+	updateChecks[id] = nil
+	downloadErrors[id] = nil
+	pendingUninstall[id] = true
+	saveState()
+	rebuildSkirmishStack()
+	refreshList()
+	Spring.Echo("[ModsWindow] Unregistered mod " .. tostring(id) .. " (shared Rapid cache retained)")
+end
+
 local function clearList()
 	if listPanel then listPanel:ClearChildren() end
 end
@@ -236,23 +255,23 @@ local function refreshList()
 				backgroundColor = {0.12, 0.14, 0.18, 0.85},
 			}
 			Label:New {
-				parent = card, x = 12, y = 8, right = 150, height = 25,
+				parent = card, x = 12, y = 8, right = installed and 280 or 150, height = 25,
 				caption = title, align = "left", font = {size = 18},
 			}
 			Label:New {
-				parent = card, x = 12, y = 34, right = 150, height = 20,
+				parent = card, x = 12, y = 34, right = installed and 280 or 150, height = 20,
 				caption = author, align = "left",
 				font = {size = 13, color = {0.75, 0.75, 0.75, 1}},
 			}
 			Label:New {
-				parent = card, x = 12, y = 58, right = 150, bottom = 8,
+				parent = card, x = 12, y = 58, right = installed and 280 or 150, bottom = 8,
 				caption = description .. "\nInstalled build: " .. tostring(version or "Unknown"),
 				align = "left", valign = "top", font = {size = 13},
 			}
 
 			local button
 			button = Button:New {
-				parent = card, right = 12, y = 36, width = 125, height = 42,
+				parent = card, right = installed and 144 or 12, y = 36, width = 125, height = 42,
 				caption = installed and (enabled and "Enabled" or "Disabled")
 					or (installing[id] and "Installing..." or "Install"),
 				backgroundColor = installed
@@ -290,6 +309,15 @@ local function refreshList()
 					end
 				},
 			}
+			if installed then
+				Button:New {
+					parent = card, right = 12, y = 36, width = 120, height = 42,
+					caption = "Uninstall",
+					backgroundColor = {0.45, 0.18, 0.18, 0.95},
+					enabled = not installing[id],
+					OnClick = {function() uninstallMod(entry) end},
+				}
+			end
 			listPanel:AddChild(card)
 		end
 	end
@@ -389,6 +417,7 @@ local function onDownloadFinished(_, _, name, fileType)
 		local isUpdateCheck = false
 		for id, check in pairs(updateChecks) do
 			if name == id or name == check.entry.rapid_tag then
+				if pendingUninstall[id] then updateChecks[id] = nil return end
 				completedId = id
 				isUpdateCheck = true
 				break
@@ -410,7 +439,7 @@ local function onDownloadFinished(_, _, name, fileType)
 			end
 			completedId = onlyId
 		end
-		if completedId then
+		if completedId and not pendingUninstall[completedId] then
 			downloadErrors[completedId] = nil
 			installedState[completedId] = true
 			local check = updateChecks[completedId]
