@@ -15,7 +15,7 @@ local CATALOG_URL = "https://raw.githubusercontent.com/RandomGuyJunior/Developme
 local CATALOG_PATH = "LuaUI/Config/randomguy_mods_catalog.json"
 local CATALOG_DOWNLOAD = "randomguy_mod_catalog"
 local STATE_PATH = "LuaUI/Config/randomguy_mods_state.json"
-local BASE_GAME_TAG = "randomguy-hosting:test"
+local BASE_GAME_TAG = "byar:test"
 local STACK_ROOT = "games/"
 
 local ModsWindow = {}
