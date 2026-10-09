@@ -220,6 +220,22 @@ local function uninstallMod(entry)
 		refreshList()
 		return
 	end
+	-- Reverse dependencies come from the published optional-mod catalog.
+	-- RandomGuy Hosting is the foundation, never an optional dependent.
+	for _, other in ipairs(mods) do
+		if other ~= entry and isInstalled(other) then
+			local dependencies = other.dependencies or other.depend or {}
+			if type(dependencies) == "table" then
+				for _, dependency in ipairs(dependencies) do
+					if dependency == id or dependency == entry.rapid_tag then
+						uninstallErrors[id] = "Cannot uninstall: " .. tostring(other.name or other.id) .. " depends on this mod."
+						refreshList()
+						return
+					end
+				end
+			end
+		end
+	end
 	uninstallSerial = uninstallSerial + 1
 	local requestId = tostring(os.time()) .. "-" .. tostring(uninstallSerial)
 	pendingUninstall[id] = requestId
