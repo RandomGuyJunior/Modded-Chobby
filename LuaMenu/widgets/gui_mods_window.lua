@@ -27,6 +27,8 @@ local installing = {}
 local downloadErrors = {}
 local enabledState = {}
 local installedState = {}
+local installedVersions = {}
+local updateChecks = {}
 local stateNeedsMigration = false
 local generatedGameName
 
@@ -68,6 +70,7 @@ local function loadState()
 	local ok, data = pcall(function() return json.decode(content) end)
 	if ok and type(data) == "table" then
 		if type(data.enabled) == "table" then enabledState = data.enabled end
+		if type(data.versions) == "table" then installedVersions = data.versions end
 		if type(data.installed) == "table" then
 			installedState = data.installed
 		else
@@ -81,11 +84,18 @@ end
 local function saveState()
 	ensureDirectories()
 	local ok, encoded = pcall(function()
-		return json.encode({schema_version = 1, installed = installedState, enabled = enabledState})
+		return json.encode({schema_version = 1, installed = installedState, enabled = enabledState, versions = installedVersions})
 	end)
 	if ok then
 		writeFile(STATE_PATH, encoded)
 	end
+end
+
+local function archiveVersion(entry)
+	if not entry or not entry.rapid_tag or not VFS.GetNameFromRapidTag then return nil end
+	local name = VFS.GetNameFromRapidTag(entry.rapid_tag)
+	if name and name ~= "" and VFS.HasArchive(name) then return name end
+	return nil
 end
 
 local function isEnabled(entry)
@@ -215,6 +225,8 @@ local function refreshList()
 			local id = entry.id or entry.rapid_tag or "unknown"
 			local title = entry.name or id
 			local description = entry.description or ""
+			local version = installedVersions[id] or archiveVersion(entry)
+			if updateChecks[id] then description = description .. "\nChecking for updates..." end
 			if downloadErrors[id] then description = description .. "\nDownload failed: " .. downloadErrors[id] end
 			local author = entry.author and ("By " .. entry.author) or ""
 
@@ -234,7 +246,7 @@ local function refreshList()
 			}
 			Label:New {
 				parent = card, x = 12, y = 58, right = 150, bottom = 8,
-				caption = description .. "\nVersion: " .. tostring(entry.version or "Unknown"),
+				caption = description .. "\nInstalled build: " .. tostring(version or "Unknown"),
 				align = "left", valign = "top", font = {size = 13},
 			}
 
@@ -296,6 +308,21 @@ local function refreshList()
 	end
 end
 
+local function checkInstalledUpdates()
+	if not (WG.DownloadHandler and WG.DownloadHandler.QueueDownload) then return end
+	for _, entry in ipairs(mods) do
+		local id = entry.id or entry.rapid_tag
+		if entry.enabled ~= false and entry.rapid_tag and isInstalled(entry) and not installing[id] and not updateChecks[id] then
+			-- Rapid tags are moving targets. Re-requesting an installed tag lets
+			-- pr-downloader compare the remote package and fetch only changes.
+			-- The archive name is the installed build identity, not catalog text.
+			updateChecks[id] = {entry = entry, before = archiveVersion(entry)}
+			WG.DownloadHandler.QueueDownload(entry.rapid_tag, "game", -1, 0, {modId = id, updateCheck = true})
+			Spring.Echo("[ModsWindow] Checking Rapid update for " .. entry.rapid_tag)
+		end
+	end
+end
+
 local function parseCatalog(content)
 	if not content or content == "" then return false, "empty catalog" end
 	local ok, data = pcall(function() return json.decode(content) end)
@@ -318,6 +345,7 @@ local function parseCatalog(content)
 	end
 	rebuildSkirmishStack()
 	refreshList()
+	checkInstalledUpdates()
 	return true
 end
 
@@ -358,6 +386,14 @@ local function onDownloadFinished(_, _, name, fileType)
 
 	if fileType == "game" or fileType == "RAPID" then
 		local completedId
+		local isUpdateCheck = false
+		for id, check in pairs(updateChecks) do
+			if name == id or name == check.entry.rapid_tag then
+				completedId = id
+				isUpdateCheck = true
+				break
+			end
+		end
 		for id, entry in pairs(installing) do
 			if name == id or (type(entry) == "table" and name == entry.rapid_tag) then
 				completedId = id
@@ -377,8 +413,18 @@ local function onDownloadFinished(_, _, name, fileType)
 		if completedId then
 			downloadErrors[completedId] = nil
 			installedState[completedId] = true
-			enabledState[completedId] = true
-			installing[completedId] = nil
+			local check = updateChecks[completedId]
+			if check then
+				local after = archiveVersion(check.entry)
+				if after and check.before ~= after then Spring.Echo("[ModsWindow] Rapid mod updated: " .. after) end
+				if after then installedVersions[completedId] = after end
+				updateChecks[completedId] = nil
+			else
+				enabledState[completedId] = true
+				local entry = installing[completedId]
+				if entry then installedVersions[completedId] = archiveVersion(entry) end
+				installing[completedId] = nil
+			end
 		end
 		saveState()
 		rebuildSkirmishStack()
@@ -391,7 +437,15 @@ local function onDownloadFailed(_, _, reason, name, fileType)
 		if statusLabel then statusLabel:SetCaption("Failed to download mod catalog.") end
 		return
 	end
-	if fileType ~= "game" then return end
+	if fileType ~= "game" and fileType ~= "RAPID" then return end
+	for id, check in pairs(updateChecks) do
+		if name == id or name == check.entry.rapid_tag then
+			updateChecks[id] = nil
+			downloadErrors[id] = "Update check failed: " .. tostring(reason or "unknown error")
+			refreshList()
+			return
+		end
+	end
 	for id, entry in pairs(installing) do
 		if name == entry.rapid_tag then
 			installing[id] = nil
