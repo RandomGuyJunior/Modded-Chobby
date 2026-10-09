@@ -178,6 +178,22 @@ local function rebuildSkirmishStack()
 		return
 	end
 
+	-- Chobby's modoptions panel uses VFS.UseArchive(gameName), which mounts
+	-- only the selected archive, not its dependency closure. Expose the
+	-- foundation's modoptions in the local stack for that preview mount.
+	local optionsContent = VFS.UseArchive(foundation, function()
+		return VFS.LoadFile("modoptions.lua", VFS.ZIP)
+	end)
+	if not optionsContent then
+		Spring.Echo("[ModsWindow] Cannot read RandomGuy Hosting modoptions.lua from " .. foundation)
+		generatedGameName = nil
+		return
+	end
+	if not writeFile(stackDir .. "/modoptions.lua", optionsContent) then
+		generatedGameName = nil
+		return
+	end
+
 	generatedGameName = stackName
 	Spring.Echo("[ModsWindow] Skirmish mod stack: " .. stackName)
 end
