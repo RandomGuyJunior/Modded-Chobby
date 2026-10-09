@@ -30,6 +30,9 @@ local installedState = {}
 local installedVersions = {}
 local updateChecks = {}
 local pendingUninstall = {}
+local uninstallErrors = {}
+local uninstallSerial = 0
+local refreshList
 local stateNeedsMigration = false
 local generatedGameName
 
@@ -211,27 +214,46 @@ end
 
 local function uninstallMod(entry)
 	local id = entry.id or entry.rapid_tag
-	if not isInstalled(entry) or installing[id] then return end
-	-- Remove this mod from the managed installation set and active stack.
-	-- Rapid package data may remain in the shared cache; never delete shared
-	-- pool files from Chobby because other games can depend on them.
-	installedState[id] = nil
-	enabledState[id] = nil
-	installedVersions[id] = nil
-	updateChecks[id] = nil
-	downloadErrors[id] = nil
-	pendingUninstall[id] = true
-	saveState()
-	rebuildSkirmishStack()
+	if not isInstalled(entry) or installing[id] or pendingUninstall[id] then return end
+	if not (WG.Connector and WG.Connector.enabled and WG.Connector.Send) then
+		uninstallErrors[id] = "Launcher connection unavailable; no files were removed."
+		refreshList()
+		return
+	end
+	uninstallSerial = uninstallSerial + 1
+	local requestId = tostring(os.time()) .. "-" .. tostring(uninstallSerial)
+	pendingUninstall[id] = requestId
+	uninstallErrors[id] = nil
+	WG.Connector.Send("UninstallMod", {id = id, tag = entry.rapid_tag, requestId = requestId})
 	refreshList()
-	Spring.Echo("[ModsWindow] Unregistered mod " .. tostring(id) .. " (shared Rapid cache retained)")
+end
+
+local function onUninstallResult(command)
+	if type(command) ~= "table" then return end
+	local id = command.id
+	if not id or not pendingUninstall[id] or pendingUninstall[id] ~= command.requestId then return end
+	pendingUninstall[id] = nil
+	if command.success == true then
+		installedState[id] = nil
+		enabledState[id] = nil
+		installedVersions[id] = nil
+		updateChecks[id] = nil
+		downloadErrors[id] = nil
+		uninstallErrors[id] = nil
+		saveState()
+		rebuildSkirmishStack()
+	else
+		uninstallErrors[id] = tostring(command.error or "Uninstall failed; files were not removed.")
+		Spring.Echo("[ModsWindow] " .. uninstallErrors[id])
+	end
+	refreshList()
 end
 
 local function clearList()
 	if listPanel then listPanel:ClearChildren() end
 end
 
-local function refreshList()
+refreshList = function()
 	clearList()
 	if not listPanel then return end
 	local visible, active = 0, 0
@@ -255,7 +277,7 @@ local function refreshList()
 				backgroundColor = {0.12, 0.14, 0.18, 0.85},
 			}
 			Label:New {
-				parent = card, x = 12, y = 8, right = installed and 280 or 150, height = 25,
+				parent = card, x = 12, y = 8, right = 150, height = 25,
 				caption = title, align = "left", font = {size = 18},
 			}
 			Label:New {
@@ -271,13 +293,13 @@ local function refreshList()
 
 			local button
 			button = Button:New {
-				parent = card, right = installed and 144 or 12, y = 36, width = 125, height = 42,
+				parent = card, right = 12, y = 36, width = 125, height = 42,
 				caption = installed and (enabled and "Enabled" or "Disabled")
 					or (installing[id] and "Installing..." or "Install"),
 				backgroundColor = installed
 					and (enabled and {0.16, 0.48, 0.22, 0.95} or {0.57, 0.17, 0.17, 0.95})
 					or {0.20, 0.24, 0.30, 0.95},
-				enabled = installed or not installing[id],
+				enabled = (not installing[id]) and (not pendingUninstall[id]),
 				OnClick = {
 					function()
 						if isInstalled(entry) then
@@ -314,7 +336,7 @@ local function refreshList()
 					parent = card, right = 12, y = 36, width = 120, height = 42,
 					caption = "Uninstall",
 					backgroundColor = {0.45, 0.18, 0.18, 0.95},
-					enabled = not installing[id],
+					enabled = not installing[id] and not pendingUninstall[id],
 					OnClick = {function() uninstallMod(entry) end},
 				}
 			end
@@ -536,6 +558,7 @@ function widget:Initialize()
 	-- the active mod stack even if the Mods page has not been opened this run.
 	loadCatalogFromDisk()
 	WG.ModsWindow = ModsWindow
+	if WG.Connector and WG.Connector.Register then WG.Connector.Register('UninstallModResult', onUninstallResult) end
 	if WG.DownloadHandler and WG.DownloadHandler.AddListener then
 		WG.DownloadHandler.AddListener("DownloadFinished", onDownloadFinished)
 		WG.DownloadHandler.AddListener("DownloadFailed", onDownloadFailed)
