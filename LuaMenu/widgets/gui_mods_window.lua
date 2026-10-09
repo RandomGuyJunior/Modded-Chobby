@@ -130,10 +130,32 @@ local function rebuildSkirmishStack()
 	local stackDir = STACK_ROOT .. "randomguy_mod_stack_" .. key .. ".sdd"
 	Spring.CreateDir(stackDir)
 
-	local dependencies = {'"rapid://' .. BASE_GAME_TAG .. '"'}
-	for _, entry in ipairs(active) do
-		dependencies[#dependencies + 1] = '"rapid://' .. entry.rapid_tag .. '"'
+	-- Resolve Rapid tags against Recoil's installed archive index. A mod stack
+	-- must depend on archive identities, not tags used by the downloader.
+	local function installedArchive(tag)
+		local name = VFS.GetNameFromRapidTag and VFS.GetNameFromRapidTag(tag)
+		if not name or name == "" or not VFS.HasArchive(name) then
+			Spring.Echo("[ModsWindow] Cannot build Skirmish stack: installed archive unresolved for " .. tag)
+			return nil
+		end
+		return name
 	end
+
+	local foundation = installedArchive(BASE_GAME_TAG)
+	if not foundation then
+		generatedGameName = nil
+		return
+	end
+	local dependencies = {string.format("%q", foundation)}
+	for _, entry in ipairs(active) do
+		local archive = installedArchive(entry.rapid_tag)
+		if not archive then
+			generatedGameName = nil
+			return
+		end
+		dependencies[#dependencies + 1] = string.format("%q", archive)
+	end
+	Spring.Echo("[ModsWindow] Skirmish installed archive dependencies: " .. table.concat(dependencies, ", "))
 
 	local modinfo = table.concat({
 		"return {",
