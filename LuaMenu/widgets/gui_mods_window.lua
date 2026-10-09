@@ -349,8 +349,8 @@ refreshList = function()
 			}
 			if installed then
 				Button:New {
-					parent = card, right = 8, y = 6, width = 32, height = 28,
-					caption = "X",
+					parent = card, right = 3, y = 3, width = 32, height = 28,
+					caption = "🗑",
 					tooltip = "Uninstall " .. title .. " (delete mod files)",
 					font = {size = 18},
 					backgroundColor = {0.45, 0.18, 0.18, 0.95},
