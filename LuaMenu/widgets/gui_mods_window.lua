@@ -282,7 +282,9 @@ refreshList = function()
 			local id = entry.id or entry.rapid_tag or "unknown"
 			local title = entry.name or id
 			local description = entry.description or ""
-			local version = installedVersions[id] or archiveVersion(entry)
+			-- Display only a short catalog version, never Rapid's internal build name.
+			local version = type(entry.version) == "string" and entry.version:match("^[vV]?%d+[%d%.]*$") and entry.version or nil
+			if version and not version:match("^[vV]") then version = "v" .. version end
 			if updateChecks[id] then description = description .. "\nChecking for updates..." end
 			if downloadErrors[id] then description = description .. "\nDownload failed: " .. downloadErrors[id] end
 			local author = entry.author and ("By " .. entry.author) or ""
@@ -303,7 +305,7 @@ refreshList = function()
 			}
 			Label:New {
 				parent = card, x = 12, y = 58, right = installed and 280 or 150, bottom = 8,
-				caption = description .. "\nInstalled build: " .. tostring(version or "Unknown"),
+				caption = description .. (version and ("\n" .. version) or ""),
 				align = "left", valign = "top", font = {size = 13},
 			}
 
