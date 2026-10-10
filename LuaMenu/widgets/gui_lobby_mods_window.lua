@@ -8,7 +8,7 @@ local CATALOG_PATH = "LuaUI/Config/randomguy_mods_catalog.json"
 local popup, status, stack
 local LobbyMods = {}
 local modStates = {}
-local lobbyListener
+local lobbyListener, listenerBattleID
 
 local function readCatalog()
   local data = VFS.LoadFile(CATALOG_PATH)
@@ -126,16 +126,18 @@ local function onRapidBattleMessage(_, userName, message)
   if not outcome then return end
   modStates[tag] = outcome == "installed" and "Installed on server" or "Server installation failed"
   if status then status:SetCaption(tag .. ": " .. modStates[tag]) end
-  if popup and popup.visible then refresh() end
+  if popup and popup.visible then refresh(); status:SetCaption(tag .. ": " .. modStates[tag]) end
 end
 
 local function syncBattleListener()
   local lobby = WG.LibLobby and WG.LibLobby.lobby
-  if lobby == lobbyListener then return end
+  local battleID = lobby and lobby.GetMyBattleID and lobby:GetMyBattleID()
+  if lobby == lobbyListener and battleID == listenerBattleID then return end
   if lobbyListener then
     lobbyListener:RemoveListener("OnSaidBattleEx", onRapidBattleMessage)
   end
   lobbyListener = lobby
+  listenerBattleID = battleID
   if lobbyListener then
     lobbyListener:AddListener("OnSaidBattleEx", onRapidBattleMessage)
   end
