@@ -7,6 +7,8 @@ local json = json or (VFS.Include and VFS.Include("libs/json.lua"))
 local CATALOG_PATH = "LuaUI/Config/randomguy_mods_catalog.json"
 local popup, status, stack
 local LobbyMods = {}
+local modStates = {}
+local lobbyListener
 
 local function readCatalog()
   local data = VFS.LoadFile(CATALOG_PATH)
@@ -41,6 +43,7 @@ local function request(action, entry)
   end
   local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
   if ok then
+    modStates[tag] = "Requested"
     status:SetCaption("Sent !mod " .. tag .. " to SPADS. Watch battle chat for the result or vote.")
   else
     status:SetCaption("Could not send mod request: " .. tostring(err))
@@ -66,6 +69,8 @@ local function refresh()
         align="left",font={size=18}}
       Label:New {parent=item,x=12,y=36,right=220,height=40,
         caption=entry.rapid_tag,align="left",font={size=12}}
+      Label:New {parent=item,x=12,y=68,right=220,height=20,
+        caption=modStates[entry.rapid_tag] or "Server status unknown",align="left",font={size=12}}
       Button:New {parent=item,right=110,y=12,width=100,height=32,
         caption="Install",OnClick={function() request("install",entry) end}}
       Button:New {parent=item,right=5,y=12,width=100,height=32,
@@ -105,6 +110,36 @@ end
 
 function LobbyMods.Close()
   if popup then popup:Hide() end
+end
+
+-- Only accept completion reports from the battle founder (the SPADS host).
+-- These states describe installation on the host, not on the player's PC.
+local function onRapidBattleMessage(_, userName, message)
+  local lobby = WG.LibLobby and WG.LibLobby.lobby
+  local battleID = lobby and lobby.GetMyBattleID and lobby:GetMyBattleID()
+  local battle = battleID and lobby.GetBattle and lobby:GetBattle(battleID)
+  if not battle or userName ~= battle.founder or type(message) ~= "string" then return end
+  local outcome, tag = message:match("^%[RapidMods%] (installed) ([%w_%-]+:[%w_%-]+)$")
+  if not outcome then
+    outcome, tag = message:match("^%[RapidMods%] (failed) ([%w_%-]+:[%w_%-]+)$")
+  end
+  if not outcome then return end
+  modStates[tag] = outcome == "installed" and "Installed on server" or "Server installation failed"
+  if status then status:SetCaption(tag .. ": " .. modStates[tag]) end
+  if popup and popup.visible then refresh() end
+end
+
+local function syncBattleListener()
+  local lobby = WG.LibLobby and WG.LibLobby.lobby
+  if lobby == lobbyListener then return end
+  if lobbyListener then
+    lobbyListener:RemoveListener("OnSaidBattleEx", onRapidBattleMessage)
+  end
+  lobbyListener = lobby
+  if lobbyListener then
+    lobbyListener:AddListener("OnSaidBattleEx", onRapidBattleMessage)
+  end
+  modStates = {}
 end
 
 -- Attach beside Adv Options in the actual multiplayer battle-room control tree.
@@ -166,6 +201,7 @@ function widget:Update(dt)
   syncFrames = syncFrames + 1
   if syncFrames >= 15 then
     syncFrames = 0
+    syncBattleListener()
     syncBattleButton()
   end
 end
@@ -176,6 +212,7 @@ function widget:Initialize()
 end
 function widget:Shutdown()
   detachBattleButton()
+  if lobbyListener then lobbyListener:RemoveListener("OnSaidBattleEx", onRapidBattleMessage) end
   WG.LobbyModsWindow=nil
   if popup then popup:Dispose() end
 end
