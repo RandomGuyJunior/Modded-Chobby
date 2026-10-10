@@ -1039,8 +1039,26 @@ function GetInterfaceRoot(optionsParent, mainWindowParent, fontFunction)
 		UpdateStatusAndInvitesHolderPosition()
 	end
 
+	-- Battle-room-only entry point; the popup is not a global Mod Hub tab.
+	local lobbyModsButton = Button:New {
+		parent = lobbyInterfaceHolder,
+		right = 12, y = titleHeight + 10, width = 145, height = 36,
+		caption = "Lobby Mods",
+		tooltip = "Request server-side mod installation or removal",
+		OnClick = {function()
+			if WG.LobbyModsWindow and WG.LobbyModsWindow.Open then
+				WG.LobbyModsWindow.Open()
+			end
+		end},
+	}
+	lobbyModsButton:Hide()
+
 	function externalFunctions.SetBattleTabHolderVisible(newVisible, rank)
 		local oldVisible = ((statusAndInvitesPanel.GetChildByName(battleTabHolder.name) and true) or false)
+		lobbyModsButton:SetVisibility(newVisible)
+		if not newVisible and WG.LobbyModsWindow and WG.LobbyModsWindow.Close then
+			WG.LobbyModsWindow.Close()
+		end
 		if oldVisible == newVisible then
 			return
 		end
