@@ -107,11 +107,75 @@ function LobbyMods.Close()
   if popup then popup:Hide() end
 end
 
+-- Attach beside Adv Options in the actual multiplayer battle-room control tree.
+-- The upstream battle-room widget is not copied into this overlay repository.
+local attachedParent, attachedButton, originalAdvRight
+
+local function detachBattleButton()
+  if attachedButton then
+    attachedButton:Dispose()
+    attachedButton = nil
+  end
+  if attachedParent and originalAdvRight then
+    local adv = attachedParent.GetChildByName and attachedParent:GetChildByName("btnModoptions")
+    if adv then
+      adv._relativeBounds.right = originalAdvRight
+      adv:UpdateClientArea()
+    end
+  end
+  attachedParent, originalAdvRight = nil, nil
+  LobbyMods.Close()
+end
+
+local function syncBattleButton()
+  local lobby = WG.LibLobby and WG.LibLobby.lobby
+  local battleID = lobby and lobby.GetMyBattleID and lobby:GetMyBattleID()
+  local handler = battleID and WG.BattleRoomWindow and WG.BattleRoomWindow.GetInfoHandler
+    and WG.BattleRoomWindow.GetInfoHandler()
+  local rightInfo = handler and handler.rightInfo
+  local parent = rightInfo and rightInfo.parent and rightInfo.parent.GetChildByName
+    and rightInfo.parent:GetChildByName("leftInfo")
+  local adv = parent and parent.GetChildByName and parent:GetChildByName("btnModoptions")
+  if not adv then
+    if attachedButton then detachBattleButton() end
+    return
+  end
+  if attachedParent == parent and attachedButton then
+    attachedButton:SetPos(nil, adv.y, nil, adv.height)
+    return
+  end
+  if attachedButton then detachBattleButton() end
+  attachedParent = parent
+  originalAdvRight = adv._relativeBounds and adv._relativeBounds.right or 5
+  -- Share the existing row; no changes to battle-room layout offsets.
+  adv._relativeBounds.right = "51%"
+  adv:UpdateClientArea()
+  attachedButton = Button:New {
+    name = "btnLobbyMods",
+    parent = parent,
+    x = "51%", right = 5, y = adv.y, height = adv.height,
+    classname = "option_button",
+    caption = "Lobby Mods",
+    tooltip = "Request a Rapid mod download from SPADS",
+    OnClick = {function() LobbyMods.Open() end},
+  }
+end
+
+local syncFrames = 0
+function widget:Update(dt)
+  syncFrames = syncFrames + 1
+  if syncFrames >= 15 then
+    syncFrames = 0
+    syncBattleButton()
+  end
+end
+
 function widget:Initialize()
   VFS.Include(LUA_DIRNAME.."widgets/chobby/headers/exports.lua",nil,VFS.RAW_FIRST)
   WG.LobbyModsWindow=LobbyMods
 end
 function widget:Shutdown()
+  detachBattleButton()
   WG.LobbyModsWindow=nil
   if popup then popup:Dispose() end
 end
