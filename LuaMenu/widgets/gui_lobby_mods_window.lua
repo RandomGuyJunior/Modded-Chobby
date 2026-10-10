@@ -16,22 +16,35 @@ local function readCatalog()
   end
   if not data then return nil, "Open Mod Hub once to refresh its catalog." end
   local ok, catalog = pcall(json.decode, data)
-  if not ok or type(catalog) ~= "table" or type(catalog.mods) ~= "table" then
+  if not ok or type(catalog) ~= "table" or tonumber(catalog.schema_version) ~= 1 or type(catalog.mods) ~= "table" then
     return nil, "Invalid Mod Hub catalog."
   end
   return catalog.mods
 end
 
 local function request(action, entry)
-  -- Transport, permissions, vote handling and installation are server-authoritative.
-  -- Never infer moderator/host/alone status from launcher state.
-  if not (WG.LobbyModRequests and WG.LobbyModRequests.Request) then
-    status:SetCaption("Server mod requests are not available on this lobby yet.")
+  if action ~= "install" then
+    status:SetCaption("Server uninstall is not implemented yet; no request sent.")
     return
   end
-  local ok, result = pcall(WG.LobbyModRequests.Request, action, entry.rapid_tag)
-  status:SetCaption(ok and (result or "Request sent; awaiting server response.") or
-    ("Request failed: " .. tostring(result)))
+  local tag = entry and entry.rapid_tag
+  if type(tag) ~= "string" or not tag:match("^dev%-mods:[%w_%-]+$") then
+    status:SetCaption("Invalid Rapid tag in the mod catalog.")
+    return
+  end
+  -- Use the same battle-chat transport as Chobby's existing SPADS commands.
+  local lobby = WG.LibLobby and WG.LibLobby.lobby
+  if not lobby or not lobby.GetMyBattleID or not lobby.SayBattle
+      or not lobby:GetMyBattleID() then
+    status:SetCaption("Join a multiplayer battle lobby before requesting a mod.")
+    return
+  end
+  local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
+  if ok then
+    status:SetCaption("Sent !mod " .. tag .. " to SPADS. Watch battle chat for the result or vote.")
+  else
+    status:SetCaption("Could not send mod request: " .. tostring(err))
+  end
 end
 
 local function refresh()
@@ -41,7 +54,7 @@ local function refresh()
   if not mods then status:SetCaption(err); return end
   local count = 0
   for _, entry in ipairs(mods) do
-    if entry.enabled ~= false and type(entry.rapid_tag) == "string" then
+    if type(entry) == "table" and entry.enabled ~= false and type(entry.rapid_tag) == "string" and entry.rapid_tag:match("^dev%-mods:[%w_%-]+$") then
       count = count + 1
       local item = Panel:New {
         width="100%", height=92, padding={10,8,10,8},
@@ -62,7 +75,7 @@ local function refresh()
   end
   stack:SetPos(nil,nil,nil,math.max(1,count*100))
   stack:Invalidate()
-  status:SetCaption("Server decides: moderator, boss or sole player = direct request; others = vote.")
+  status:SetCaption("Install sends !mod <tag> to SPADS via battle chat. Server controls permissions and votes.")
 end
 
 function LobbyMods.Open()
