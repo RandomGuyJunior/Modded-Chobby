@@ -164,21 +164,11 @@ local function detachBattleButton()
   LobbyMods.Close()
 end
 
--- The Mod Hub belongs exclusively to the Modded BAR lobby, never official BAR.
--- Check the active connection rather than the game archive (which can change).
-local function isModdedBarLobby()
-  local address = WG.Server and WG.Server.address
-  if type(address) ~= "string" then return false end
-  address = address:lower():gsub("^%s+", ""):gsub("%s+$", "")
-  address = address:gsub("^%w+://", ""):match("^[^/:]+")
-  return address == "moddedbar.duckdns.org"
-end
-
+-- This widget is shipped only by the Modded-Chobby archive. Do not gate
+-- its battle-room button on the connected lobby hostname: Modded-Chobby
+-- can connect to either the custom TEI lobby or the official lobby.
+-- Official Chobby does not include this overlay widget.
 local function syncBattleButton()
-  if not isModdedBarLobby() then
-    if attachedButton then detachBattleButton() end
-    return
-  end
   local lobby = WG.LibLobby and WG.LibLobby.lobby
   local battleID = lobby and lobby.GetMyBattleID and lobby:GetMyBattleID()
   local handler = battleID and WG.BattleRoomWindow and WG.BattleRoomWindow.GetInfoHandler
