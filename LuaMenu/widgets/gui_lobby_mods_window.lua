@@ -73,8 +73,6 @@ local function refresh()
         caption=modStates[entry.rapid_tag] or "Server status unknown",align="left",font={size=12}}
       Button:New {parent=item,right=110,y=12,width=100,height=32,
         caption="Install",OnClick={function() request("install",entry) end}}
-      Button:New {parent=item,right=5,y=12,width=100,height=32,
-        caption="Uninstall",OnClick={function() request("uninstall",entry) end}}
       stack:AddChild(item)
     end
   end
@@ -144,18 +142,15 @@ local function syncBattleListener()
   modStates = {}
 end
 
--- Attach beside Adv Options in the actual multiplayer battle-room control tree.
--- The upstream battle-room widget is not copied into this overlay repository.
+-- Add the button inside the battle room, beside Advanced Options.
+-- This widget is included only in Modded-Chobby, never official Chobby.
 local attachedParent, attachedButton, originalAdvRight
 
 local function detachBattleButton()
-  if attachedButton then
-    attachedButton:Dispose()
-    attachedButton = nil
-  end
+  if attachedButton then attachedButton:Dispose(); attachedButton = nil end
   if attachedParent and originalAdvRight then
     local adv = attachedParent.GetChildByName and attachedParent:GetChildByName("btnModoptions")
-    if adv then
+    if adv and adv._relativeBounds then
       adv._relativeBounds.right = originalAdvRight
       adv:UpdateClientArea()
     end
@@ -164,42 +159,40 @@ local function detachBattleButton()
   LobbyMods.Close()
 end
 
--- This widget is shipped only by the Modded-Chobby archive. Do not gate
--- its battle-room button on the connected lobby hostname: Modded-Chobby
--- can connect to either the custom TEI lobby or the official lobby.
--- Official Chobby does not include this overlay widget.
 local function syncBattleButton()
   local lobby = WG.LibLobby and WG.LibLobby.lobby
   local battleID = lobby and lobby.GetMyBattleID and lobby:GetMyBattleID()
   local handler = battleID and WG.BattleRoomWindow and WG.BattleRoomWindow.GetInfoHandler
     and WG.BattleRoomWindow.GetInfoHandler()
+  -- The upstream handler exports rightInfo, but NOT leftInfo. Both controls
+  -- are siblings in the battle room; find Advanced Options via the parent.
   local rightInfo = handler and handler.rightInfo
-  local parent = rightInfo and rightInfo.parent and rightInfo.parent.GetChildByName
-    and rightInfo.parent:GetChildByName("leftInfo")
+  local roomParent = rightInfo and rightInfo.parent
+  local parent = roomParent and roomParent.GetChildByName
+    and roomParent:GetChildByName("leftInfo")
   local adv = parent and parent.GetChildByName and parent:GetChildByName("btnModoptions")
   if not adv then
     if attachedButton then detachBattleButton() end
     return
   end
-  if attachedParent == parent and attachedButton then
-    attachedButton:SetPos(nil, adv.y, nil, adv.height)
-    return
-  end
+  if attachedParent == parent and attachedButton then return end
   if attachedButton then detachBattleButton() end
   attachedParent = parent
   originalAdvRight = adv._relativeBounds and adv._relativeBounds.right or 5
-  -- Share the existing row; no changes to battle-room layout offsets.
-  adv._relativeBounds.right = "51%"
-  adv:UpdateClientArea()
+  if adv._relativeBounds then
+    adv._relativeBounds.right = "51%"
+    adv:UpdateClientArea()
+  end
   attachedButton = Button:New {
     name = "btnLobbyMods",
     parent = parent,
-    x = "51%", right = 5, y = adv.y, height = adv.height,
+    x = "51%", right = 5, y = adv.y, height = adv.height or 35,
     classname = "option_button",
     caption = "Lobby Mods",
-    tooltip = "Request a Rapid mod download from SPADS",
+    tooltip = "Ask SPADS to download a Rapid mod",
     OnClick = {function() LobbyMods.Open() end},
   }
+  Spring.Echo("[LobbyMods] Battle-room button attached")
 end
 
 local syncFrames = 0
