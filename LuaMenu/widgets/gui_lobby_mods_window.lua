@@ -185,6 +185,10 @@ local function onBattleChat(client, sender, message)
     tag = message:match("^%[RapidMods%] failed ([%w_%-]+:[%w_%-]+)$")
     state = "Failed"
   end
+  if not tag then
+    tag = message:match("^%[RapidMods%] installing ([%w_%-]+:[%w_%-]+)$")
+    state = "Installing"
+  end
   if not tag then return end
   modStates[tag] = state
   if activeRequestTag == tag then activeRequestTag = nil end
