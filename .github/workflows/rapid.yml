@@ -6,6 +6,11 @@ on:
       - master
   workflow_dispatch:
 
+# Avoid out-of-order pushes publishing an older test version after a newer one.
+concurrency:
+  group: modded-chobby-rapid-test
+  cancel-in-progress: true
+
 permissions:
   id-token: write
   contents: read
@@ -34,7 +39,21 @@ jobs:
           grep -q 'randomguy_mods' LuaMenu/widgets/gui_modoptions_panel.lua
           grep -q 's.battle.extra_data' LuaMenu/widgets/gui_lobby_mods_window.lua
 
+      - name: Skip superseded commits
+        id: latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git ls-remote origin refs/heads/master | cut -f1)"
+          if [ "$head_sha" = "$GITHUB_SHA" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping stale commit $GITHUB_SHA; master is $head_sha"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish modded-chobby:test
+        if: steps.latest.outputs.publish == 'true'
         uses: beyond-all-reason/rapid-hosting/action@b4a7a7ea2deb83ed89b02d4cb2e531311e0f4b00
         with:
           url: https://randomguyrapid.duckdns.org/build
