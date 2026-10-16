@@ -1041,9 +1041,6 @@ function GetInterfaceRoot(optionsParent, mainWindowParent, fontFunction)
 
 	function externalFunctions.SetBattleTabHolderVisible(newVisible, rank)
 		local oldVisible = ((statusAndInvitesPanel.GetChildByName(battleTabHolder.name) and true) or false)
-		if not newVisible and WG.LobbyModsWindow and WG.LobbyModsWindow.Close then
-			WG.LobbyModsWindow.Close()
-		end
 		if oldVisible == newVisible then
 			return
 		end
