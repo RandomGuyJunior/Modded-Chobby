@@ -9,6 +9,7 @@ local CAPABILITY = "rapid-mods-v1"
 local LobbyMods = {}
 local listenerBattleID, hookedLobby, originalExtraDataHandler, interfaceCommands
 local capabilityBattleID
+local pendingCapabilities = {}
 local modStates = {}
 local panels = {}
 
@@ -107,7 +108,7 @@ end
 -- normal lobby dispatch or sending a chat message.
 local function onBattleExtraData(_, battleID, encoded)
   local _, currentID = currentBattle()
-  if tostring(currentID or "") ~= tostring(battleID or "") then return end
+  if not tonumber(battleID) then return end
   local ok, decoded = pcall(function()
     return json.decode(Spring.Utilities.Base64Decode(encoded))
   end)
@@ -118,6 +119,8 @@ local function onBattleExtraData(_, battleID, encoded)
       if capability == CAPABILITY then enabled = true; break end
     end
   end
+  pendingCapabilities[tonumber(battleID)] = enabled
+  if tostring(currentID or "") ~= tostring(battleID) then return end
   local newID = enabled and currentID or nil
   if capabilityBattleID ~= newID then
     capabilityBattleID = newID
@@ -147,7 +150,8 @@ local function syncListener()
   end
   if battleID ~= listenerBattleID then
     listenerBattleID = battleID
-    capabilityBattleID = nil
+    capabilityBattleID = (battleID and pendingCapabilities[tonumber(battleID)]) and battleID or nil
+    if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
     panels = {}
   end
