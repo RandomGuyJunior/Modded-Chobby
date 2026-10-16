@@ -1378,6 +1378,7 @@ function widget:Initialize()
 	CHOBBY_DIR = LUA_DIRNAME .. "widgets/chobby/"
 	VFS.Include(LUA_DIRNAME .. "widgets/chobby/headers/exports.lua", nil, VFS.RAW_FIRST)
 
+	Spring.Echo("[RandomGuyMods] Custom Advanced Options panel loaded (native Mods tab support)")
 	WG.ModoptionsPanel = ModoptionsPanel
 	if WG.LobbyModsWindow then
 		WG.LobbyModsWindow.OnCapabilityChanged = ModoptionsPanel.RefreshModsCapability
