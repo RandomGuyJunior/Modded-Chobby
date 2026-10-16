@@ -767,6 +767,9 @@ CreateModoptionWindow = function()
 		}
 	}
 	local function CancelFunc()
+		if WG.LobbyModsWindow and WG.LobbyModsWindow.DiscardPending then
+			WG.LobbyModsWindow.DiscardPending()
+		end
 		modoptionsSelectionWindow:Dispose()
 		if WG.BattleRoomChatInput then
 			screen0:FocusControl(WG.BattleRoomChatInput)
@@ -786,6 +789,9 @@ CreateModoptionWindow = function()
 			end
 		end
 		battleLobby:SetModOptions(localModoptions)
+		if WG.LobbyModsWindow and WG.LobbyModsWindow.ApplyPending then
+			WG.LobbyModsWindow.ApplyPending()
+		end
 		modoptionsSelectionWindow:Dispose()
 		if WG.BattleRoomChatInput then
 			screen0:FocusControl(WG.BattleRoomChatInput)
