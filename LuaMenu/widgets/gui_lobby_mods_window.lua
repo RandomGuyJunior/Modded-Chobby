@@ -14,6 +14,8 @@ local pendingCapabilities = {}
 local modStates = {}
 local panels = {}
 local activeRequestTag
+local pendingMods = {}
+local pendingOrder = {}
 local function refreshRows()
   for _, panel in ipairs(panels) do
     if panel.entries then
@@ -56,9 +58,6 @@ end
 
 -- Requests are staged for the Advanced Options Apply button, never sent
 -- by the Mods tab itself. A server response/vote is not an installation.
-local pendingMods = {}
-local pendingOrder = {}
-
 function LobbyMods.DiscardPending()
   pendingMods = {}
   pendingOrder = {}
