@@ -40,27 +40,74 @@ function LobbyMods.IsAvailable()
   return battle ~= nil and capabilityBattleID == battleID
 end
 
-local function request(entry, status)
+-- Requests are staged for the Advanced Options Apply button, never sent
+-- by the Mods tab itself. A server response/vote is not an installation.
+local pendingMods = {}
+local pendingOrder = {}
+
+function LobbyMods.DiscardPending()
+  pendingMods = {}
+  pendingOrder = {}
+end
+
+function LobbyMods.ApplyPending()
+  if #pendingOrder == 0 then return end
   if not LobbyMods.IsAvailable() then
-    status:SetCaption("This SPADS battle does not advertise Mod Hub support.")
-    return
-  end
-  local tag = entry and entry.rapid_tag
-  if type(tag) ~= "string" or not tag:match("^dev%-mods:[%w_%-]+$") then
-    status:SetCaption("Invalid Rapid tag.")
+    Spring.Echo("[RandomGuyMods] pending mods discarded: unsupported battle")
+    LobbyMods.DiscardPending()
     return
   end
   local lobby = WG.LibLobby and WG.LibLobby.lobby
-  if not lobby or not lobby.SayBattle then
-    status:SetCaption("Battle chat is not available.")
+  if not lobby or type(lobby.SayBattle) ~= "function" then
+    Spring.Echo("[RandomGuyMods] cannot apply queued mods: battle chat unavailable")
     return
   end
-  local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
-  if ok then
-    modStates[tag] = "Requested"
-    status:SetCaption("Sent !mod " .. tag .. " to SPADS. See battle chat for the response or vote.")
+  -- Do not send several simultaneous downloads: RapidMods has a single
+  -- downloader and will reject concurrent !mod requests. Only one can be
+  -- queued per Apply operation.
+  for _, tag in ipairs(pendingOrder) do
+    if pendingMods[tag] then
+      local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
+      if ok then
+        modStates[tag] = "Requested (await SPADS result)"
+        Spring.Echo("[RandomGuyMods] submitted !mod " .. tag .. " on Apply")
+        LobbyMods.DiscardPending()
+      else
+        Spring.Echo("[RandomGuyMods] !mod request failed: " .. tostring(err))
+      end
+      return
+    end
+  end
+  LobbyMods.DiscardPending()
+end
+
+local function togglePending(tag, button, stateLabel, status)
+  if pendingMods[tag] then
+    pendingMods[tag] = nil
+    pendingOrder = {}
+    button:SetCaption("Install")
+    stateLabel:SetCaption(modStates[tag] or "Server status unknown")
+    status:SetCaption("Pending install cancelled. Click Apply to submit any remaining changes.")
   else
-    status:SetCaption("Failed to send request: " .. tostring(err))
+    -- SPADS supports one Rapid download at a time.
+    for priorTag, _ in pairs(pendingMods) do
+      pendingMods[priorTag] = nil
+    end
+    for _, panel in ipairs(panels) do
+      if panel.entries then
+        for otherTag, controls in pairs(panel.entries) do
+          if otherTag ~= tag then
+            controls.button:SetCaption("Install")
+            controls.stateLabel:SetCaption(modStates[otherTag] or "Server status unknown")
+          end
+        end
+      end
+    end
+    pendingMods[tag] = true
+    pendingOrder = {tag}
+    button:SetCaption("Undo")
+    stateLabel:SetCaption("Pending Apply")
+    status:SetCaption("Queued " .. tag .. ". Click Apply to request installation, or Cancel to discard.")
   end
 end
 
@@ -80,6 +127,7 @@ function LobbyMods.CreateTab()
     return scroll
   end
   local row = 0
+  local entryControls = {}
   for _, entry in ipairs(mods) do
     if type(entry) == "table" and entry.enabled ~= false
       and type(entry.rapid_tag) == "string" and entry.rapid_tag:match("^dev%-mods:[%w_%-]+$") then
@@ -92,15 +140,18 @@ function LobbyMods.CreateTab()
         caption=tostring(entry.name or entry.id or entry.rapid_tag), align="left", font={size=18}}
       Label:New {parent=item, x=12, y=32, right=135, height=23,
         caption=entry.rapid_tag, align="left", font={size=12}}
-      Label:New {parent=item, x=12, y=58, right=135, height=20,
-        caption=modStates[entry.rapid_tag] or "Server status unknown", align="left", font={size=12}}
-      Button:New {parent=item, right=10, y=15, width=110, height=35,
-        caption="Install", OnClick={function() request(entry,status) end}}
+      local tag = entry.rapid_tag
+      local stateLabel = Label:New {parent=item, x=12, y=58, right=135, height=20,
+        caption=pendingMods[tag] and "Pending Apply" or (modStates[tag] or "Server status unknown"), align="left", font={size=12}}
+      local button = Button:New {parent=item, right=10, y=15, width=110, height=35,
+        caption=pendingMods[tag] and "Undo" or "Install"}
+      button.OnClick = {function() togglePending(tag, button, stateLabel, status) end}
+      entryControls[tag] = {button=button, stateLabel=stateLabel}
       row = row + 1
     end
   end
-  status:SetCaption("Install requests are sent through battle chat. SPADS enforces permissions and votes.")
-  panels[#panels+1] = {control=scroll,status=status}
+  status:SetCaption("Select a mod, then click Apply. SPADS enforces permissions and votes.")
+  panels[#panels+1] = {control=scroll,status=status,entries=entryControls}
   return scroll
 end
 
@@ -164,6 +215,7 @@ local function syncListener()
     capabilityBattleID = (battleID and pendingCapabilities[tonumber(battleID)]) and battleID or nil
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
+    LobbyMods.DiscardPending()
     panels = {}
   end
 end
