@@ -5,9 +5,9 @@ end
 
 local json = json or (VFS.Include and VFS.Include("libs/json.lua"))
 local CATALOG_PATH = "LuaUI/Config/randomguy_mods_catalog.json"
-local CAPABILITY = "[RapidMods] hub-v1"
+local CAPABILITY = "rapid-mods-v1"
 local LobbyMods = {}
-local lobbyListener, listenerBattleID
+local listenerBattleID, hookedLobby, originalExtraDataHandler, interfaceCommands
 local capabilityBattleID
 local modStates = {}
 local panels = {}
@@ -102,38 +102,55 @@ function LobbyMods.CreateTab()
   return scroll
 end
 
-local function onRapidBattleMessage(_, userName, message)
-  local _, battleID, battle = currentBattle()
-  if not battle or userName ~= battle.founder or type(message) ~= "string" then return end
-  -- SPADS sayBattle sends SAYBATTLEEX with a "* " action prefix.
-  message = message:gsub("^%*%s+", "")
-  if message == CAPABILITY then
-    capabilityBattleID = battleID
-    return
-  end
-  local outcome, tag = message:match("^%[RapidMods%] (installed) ([%w_%-]+:[%w_%-]+)$")
-  if not outcome then outcome, tag = message:match("^%[RapidMods%] (failed) ([%w_%-]+:[%w_%-]+)$") end
-  if not outcome then return end
-  modStates[tag] = outcome == "installed" and "Installed on server" or "Server installation failed"
-  for i=#panels,1,-1 do
-    local panel=panels[i]
-    if panel.control and panel.control.disposed then
-      table.remove(panels,i)
-    elseif panel.status then
-      panel.status:SetCaption(tag .. ": " .. modStates[tag])
+-- The standard Chobby Spring interface already parses s.battle.extra_data,
+-- but discards it. Wrap the existing command handler without changing
+-- normal lobby dispatch or sending a chat message.
+local function onBattleExtraData(_, battleID, encoded)
+  local _, currentID = currentBattle()
+  if tostring(currentID or "") ~= tostring(battleID or "") then return end
+  local ok, decoded = pcall(function()
+    return json.decode(Spring.Utilities.Base64Decode(encoded))
+  end)
+  if not ok or type(decoded) ~= "table" then return end
+  local enabled = false
+  if type(decoded.mod_hub_capabilities) == "table" then
+    for _, capability in ipairs(decoded.mod_hub_capabilities) do
+      if capability == CAPABILITY then enabled = true; break end
     end
+  end
+  local newID = enabled and currentID or nil
+  if capabilityBattleID ~= newID then
+    capabilityBattleID = newID
+    if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
   end
 end
 
 local function syncListener()
   local lobby, battleID = currentBattle()
-  if lobby == lobbyListener and battleID == listenerBattleID then return end
-  if lobbyListener then lobbyListener:RemoveListener("OnSaidBattleEx",onRapidBattleMessage) end
-  lobbyListener, listenerBattleID = lobby, battleID
-  capabilityBattleID = nil
-  modStates = {}
-  panels = {}
-  if lobbyListener and battleID then lobbyListener:AddListener("OnSaidBattleEx",onRapidBattleMessage) end
+  if hookedLobby ~= lobby then
+    if interfaceCommands and interfaceCommands["s.battle.extra_data"] == hookedLobby._rapidModsExtraDataWrapper then
+      interfaceCommands["s.battle.extra_data"] = originalExtraDataHandler
+    end
+    hookedLobby, interfaceCommands, originalExtraDataHandler = lobby, nil, nil
+    if lobby and type(lobby.commands) == "table" then
+      interfaceCommands = lobby.commands
+      originalExtraDataHandler = interfaceCommands["s.battle.extra_data"]
+      if type(originalExtraDataHandler) == "function" then
+        local wrapper = function(self, battleIDParam, data)
+          originalExtraDataHandler(self, battleIDParam, data)
+          onBattleExtraData(self, battleIDParam, data)
+        end
+        lobby._rapidModsExtraDataWrapper = wrapper
+        interfaceCommands["s.battle.extra_data"] = wrapper
+      end
+    end
+  end
+  if battleID ~= listenerBattleID then
+    listenerBattleID = battleID
+    capabilityBattleID = nil
+    modStates = {}
+    panels = {}
+  end
 end
 
 local frames=0
@@ -148,6 +165,8 @@ function widget:Initialize()
   syncListener()
 end
 function widget:Shutdown()
-  if lobbyListener then lobbyListener:RemoveListener("OnSaidBattleEx",onRapidBattleMessage) end
+  if interfaceCommands and hookedLobby and interfaceCommands["s.battle.extra_data"] == hookedLobby._rapidModsExtraDataWrapper then
+    interfaceCommands["s.battle.extra_data"] = originalExtraDataHandler
+  end
   WG.LobbyModsWindow=nil
 end
