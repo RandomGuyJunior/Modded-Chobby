@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -14,6 +15,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out complete Chobby source
+        uses: actions/checkout@v4
+
+      - name: Verify required battle-room widgets are tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            LuaMenu/widgets/gui_lobby_mods_window.lua \
+            LuaMenu/widgets/gui_modoptions_panel.lua; do
+            test -s "$file" || { echo "::error file=$file::Widget missing from checkout"; exit 1; }
+            git ls-files --error-unmatch "$file" >/dev/null || {
+              echo "::error file=$file::Widget not tracked by Git"
+              exit 1
+            }
+          done
+          grep -q 'randomguy_mods' LuaMenu/widgets/gui_modoptions_panel.lua
+          grep -q 's.battle.extra_data' LuaMenu/widgets/gui_lobby_mods_window.lua
+
       - name: Publish modded-chobby:test
         uses: beyond-all-reason/rapid-hosting/action@b4a7a7ea2deb83ed89b02d4cb2e531311e0f4b00
         with:
