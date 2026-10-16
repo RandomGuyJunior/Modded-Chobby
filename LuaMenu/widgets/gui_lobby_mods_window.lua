@@ -105,6 +105,8 @@ end
 local function onRapidBattleMessage(_, userName, message)
   local _, battleID, battle = currentBattle()
   if not battle or userName ~= battle.founder or type(message) ~= "string" then return end
+  -- SPADS sayBattle sends SAYBATTLEEX with a "* " action prefix.
+  message = message:gsub("^%*%s+", "")
   if message == CAPABILITY then
     capabilityBattleID = battleID
     return
