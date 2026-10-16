@@ -7,7 +7,7 @@ local json = json or (VFS.Include and VFS.Include("libs/json.lua"))
 local CATALOG_PATH = "LuaUI/Config/randomguy_mods_catalog.json"
 local CAPABILITY = "rapid-mods-v1"
 local LobbyMods = {}
-local listenerBattleID, hookedLobby, originalExtraDataHandler, interfaceCommands
+local listenerBattleID, hookedLobby, originalCommandGetter
 local capabilityBattleID
 local requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID
 local pendingCapabilities = {}
@@ -134,24 +134,28 @@ end
 local function syncListener()
   local lobby, battleID = currentBattle()
   if hookedLobby ~= lobby then
-    if interfaceCommands and interfaceCommands["s.battle.extra_data"] == hookedLobby._rapidModsExtraDataWrapper then
-      interfaceCommands["s.battle.extra_data"] = originalExtraDataHandler
+    if hookedLobby and originalCommandGetter and hookedLobby._GetCommandFunction == hookedLobby._rapidModsGetCommandFunction then
+      hookedLobby._GetCommandFunction = originalCommandGetter
     end
-    hookedLobby, interfaceCommands, originalExtraDataHandler = lobby, nil, nil
-    if lobby and type(lobby.commands) == "table" then
-      interfaceCommands = lobby.commands
-      originalExtraDataHandler = interfaceCommands["s.battle.extra_data"]
-      Spring.Echo("[RandomGuyMods] lobby command handler available=" .. tostring(type(originalExtraDataHandler) == "function"))
-      if type(originalExtraDataHandler) == "function" then
-        local wrapper = function(self, battleIDParam, data)
-          originalExtraDataHandler(self, battleIDParam, data)
-          onBattleExtraData(self, battleIDParam, data)
+    hookedLobby, originalCommandGetter = lobby, nil
+    if lobby and type(lobby._GetCommandFunction) == "function" then
+      -- The underlying LuaLobby dispatcher calls self:_GetCommandFunction.
+      -- Hook that lookup, not lobby.commands: the dispatcher reads the
+      -- lexical Interface.commands table, which need not be lobby.commands.
+      originalCommandGetter = lobby._GetCommandFunction
+      local wrappedGetter = function(self, cmdName)
+        local handler, pattern = originalCommandGetter(self, cmdName)
+        if cmdName ~= "s.battle.extra_data" or type(handler) ~= "function" then
+          return handler, pattern
         end
-        lobby._rapidModsExtraDataWrapper = wrapper
-        interfaceCommands["s.battle.extra_data"] = wrapper
+        return function(client, battleIDParam, data)
+          handler(client, battleIDParam, data)
+          onBattleExtraData(client, battleIDParam, data)
+        end, pattern
       end
-    else
-      Spring.Echo("[RandomGuyMods] lobby.commands unavailable for capability interception")
+      lobby._rapidModsGetCommandFunction = wrappedGetter
+      lobby._GetCommandFunction = wrappedGetter
+      Spring.Echo("[RandomGuyMods] incoming command lookup hooked")
     end
   end
   if battleID ~= listenerBattleID then
@@ -205,8 +209,8 @@ function widget:Initialize()
   requestBattleCapabilities()
 end
 function widget:Shutdown()
-  if interfaceCommands and hookedLobby and interfaceCommands["s.battle.extra_data"] == hookedLobby._rapidModsExtraDataWrapper then
-    interfaceCommands["s.battle.extra_data"] = originalExtraDataHandler
+  if hookedLobby and originalCommandGetter and hookedLobby._GetCommandFunction == hookedLobby._rapidModsGetCommandFunction then
+    hookedLobby._GetCommandFunction = originalCommandGetter
   end
   WG.LobbyModsWindow=nil
 end
