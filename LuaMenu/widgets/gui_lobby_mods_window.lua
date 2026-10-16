@@ -9,6 +9,7 @@ local CAPABILITY = "rapid-mods-v1"
 local LobbyMods = {}
 local listenerBattleID, hookedLobby, originalExtraDataHandler, interfaceCommands
 local capabilityBattleID
+local requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID
 local pendingCapabilities = {}
 local modStates = {}
 local panels = {}
@@ -120,6 +121,7 @@ local function onBattleExtraData(_, battleID, encoded)
     end
   end
   Spring.Echo("[RandomGuyMods] extra_data battle=" .. tostring(battleID) .. " current=" .. tostring(currentID) .. " supported=" .. tostring(enabled))
+  if tostring(currentID or "") == tostring(battleID) then respondedBattleID = battleID end
   pendingCapabilities[tonumber(battleID)] = enabled
   if tostring(currentID or "") ~= tostring(battleID) then return end
   local newID = enabled and currentID or nil
@@ -162,17 +164,26 @@ local function syncListener()
   end
 end
 
--- TEI exposes capabilities on demand; registration does not push extra_data.
--- Request once after joining a battle, when the lobby command channel is ready.
-local requestedBattleID, requestedLobby
+-- TEI only replies to accepted lobby clients. A newly joined battle can be
+-- visible locally before TEI processes the join; retry briefly until any
+-- authoritative extra_data response arrives. Never assume support on timeout.
 local function requestBattleCapabilities()
   local lobby, battleID, battle = currentBattle()
-  if not lobby or not battleID or not battle or type(lobby._SendCommand) ~= "function" then return end
-  if requestedBattleID == battleID and requestedLobby == lobby then return end
+  if not lobby or not battleID or not battle or type(lobby._SendCommand) ~= "function" then
+    requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID = nil, nil, 0, 0, nil
+    return
+  end
+  if requestedBattleID ~= battleID or requestedLobby ~= lobby then
+    requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID = battleID, lobby, 0, 0, nil
+  end
+  if respondedBattleID == battleID or requestAttempts >= 6 then return end
+  requestTicks = requestTicks + 1
+  if requestAttempts > 0 and requestTicks < 4 then return end
+  requestTicks = 0
+  requestAttempts = requestAttempts + 1
   local ok, err = pcall(function() lobby:_SendCommand("c.battle.extra_data") end)
   if ok then
-    requestedBattleID, requestedLobby = battleID, lobby
-    Spring.Echo("[RandomGuyMods] requested c.battle.extra_data for battle=" .. tostring(battleID))
+    Spring.Echo("[RandomGuyMods] requested c.battle.extra_data for battle=" .. tostring(battleID) .. " attempt=" .. tostring(requestAttempts))
   else
     Spring.Echo("[RandomGuyMods] capability request failed: " .. tostring(err))
   end
