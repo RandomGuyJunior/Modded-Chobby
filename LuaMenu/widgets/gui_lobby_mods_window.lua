@@ -24,7 +24,7 @@ local function refreshRows()
         local state = modStates[tag]
         local locked = state == "Installing" or state == "Requested (await SPADS result)" or (state == "Installed" or state == "Downloaded on SPADS")
         controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or "Server status unknown")
-        controls.button:SetCaption(locked and (state == "Installed" and "Installed" or "Waiting") or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
+        controls.button:SetCaption(locked and ((state == "Installed" or state == "Downloaded on SPADS") and "Downloaded" or "Waiting") or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
         controls.button:SetEnabled(not locked)
       end
     end
