@@ -162,10 +162,26 @@ local function syncListener()
   end
 end
 
+-- TEI exposes capabilities on demand; registration does not push extra_data.
+-- Request once after joining a battle, when the lobby command channel is ready.
+local requestedBattleID, requestedLobby
+local function requestBattleCapabilities()
+  local lobby, battleID, battle = currentBattle()
+  if not lobby or not battleID or not battle or type(lobby._SendCommand) ~= "function" then return end
+  if requestedBattleID == battleID and requestedLobby == lobby then return end
+  local ok, err = pcall(function() lobby:_SendCommand("c.battle.extra_data") end)
+  if ok then
+    requestedBattleID, requestedLobby = battleID, lobby
+    Spring.Echo("[RandomGuyMods] requested c.battle.extra_data for battle=" .. tostring(battleID))
+  else
+    Spring.Echo("[RandomGuyMods] capability request failed: " .. tostring(err))
+  end
+end
+
 local frames=0
 function widget:Update()
   frames=frames+1
-  if frames>=15 then frames=0; syncListener() end
+  if frames>=15 then frames=0; syncListener(); requestBattleCapabilities() end
 end
 
 function widget:Initialize()
@@ -175,6 +191,7 @@ function widget:Initialize()
     LobbyMods.OnCapabilityChanged = WG.ModoptionsPanel.RefreshModsCapability
   end
   syncListener()
+  requestBattleCapabilities()
 end
 function widget:Shutdown()
   if interfaceCommands and hookedLobby and interfaceCommands["s.battle.extra_data"] == hookedLobby._rapidModsExtraDataWrapper then
