@@ -13,6 +13,20 @@ local requestedBattleID, requestedLobby, requestAttempts, requestTicks, responde
 local pendingCapabilities = {}
 local modStates = {}
 local panels = {}
+local activeRequestTag
+local function refreshRows()
+  for _, panel in ipairs(panels) do
+    if panel.entries then
+      for tag, controls in pairs(panel.entries) do
+        local state = modStates[tag]
+        local locked = state == "Installing" or state == "Requested (await SPADS result)" or state == "Installed"
+        controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or "Server status unknown")
+        controls.button:SetCaption(locked and (state == "Installed" and "Installed" or "Waiting") or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
+        controls.button:SetEnabled(not locked)
+      end
+    end
+  end
+end
 
 local function currentBattle()
   local lobby = WG.LibLobby and WG.LibLobby.lobby
@@ -70,6 +84,8 @@ function LobbyMods.ApplyPending()
       local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
       if ok then
         modStates[tag] = "Requested (await SPADS result)"
+        activeRequestTag = tag
+        refreshRows()
         Spring.Echo("[RandomGuyMods] submitted !mod " .. tag .. " on Apply")
         LobbyMods.DiscardPending()
       else
@@ -103,6 +119,7 @@ local function togglePending(tag, button, stateLabel, status)
         end
       end
     end
+    if modStates[tag] == "Installed" or modStates[tag] == "Installing" or modStates[tag] == "Requested (await SPADS result)" then return end
     pendingMods[tag] = true
     pendingOrder = {tag}
     button:SetCaption("Undo")
@@ -152,7 +169,28 @@ function LobbyMods.CreateTab()
   end
   status:SetCaption("Select a mod, then click Apply. SPADS enforces permissions and votes.")
   panels[#panels+1] = {control=scroll,status=status,entries=entryControls}
+  refreshRows()
   return scroll
+end
+
+-- Only trust status from the current battle host, not other players.
+local function onBattleChat(client, sender, message)
+  local _, _, battle = currentBattle()
+  if not battle or type(message) ~= "string" then return end
+  local hostName = battle.founder or battle.hostName or battle.host
+  if type(hostName) == "table" then hostName = hostName.userName or hostName.name end
+  if not hostName or tostring(hostName) ~= tostring(sender) then return end
+  local tag = message:match("^%[RapidMods%] installed ([%w_%-]+:[%w_%-]+)$")
+  local state = "Installed"
+  if not tag then
+    tag = message:match("^%[RapidMods%] failed ([%w_%-]+:[%w_%-]+)$")
+    state = "Failed"
+  end
+  if not tag then return end
+  modStates[tag] = state
+  if activeRequestTag == tag then activeRequestTag = nil end
+  Spring.Echo("[RandomGuyMods] SPADS reported " .. state .. " for " .. tag)
+  refreshRows()
 end
 
 -- The standard Chobby Spring interface already parses s.battle.extra_data,
@@ -196,12 +234,16 @@ local function syncListener()
       originalCommandGetter = lobby._GetCommandFunction
       local wrappedGetter = function(self, cmdName)
         local handler, pattern = originalCommandGetter(self, cmdName)
-        if cmdName ~= "s.battle.extra_data" or type(handler) ~= "function" then
+        if (cmdName ~= "s.battle.extra_data" and cmdName ~= "SAIDBATTLE" and cmdName ~= "SAIDBATTLEEX") or type(handler) ~= "function" then
           return handler, pattern
         end
         return function(client, battleIDParam, data)
           handler(client, battleIDParam, data)
-          onBattleExtraData(client, battleIDParam, data)
+          if cmdName == "s.battle.extra_data" then
+            onBattleExtraData(client, battleIDParam, data)
+          else
+            onBattleChat(client, battleIDParam, data)
+          end
         end, pattern
       end
       lobby._rapidModsGetCommandFunction = wrappedGetter
@@ -215,6 +257,7 @@ local function syncListener()
     capabilityBattleID = (battleID and pendingCapabilities[tonumber(battleID)]) and battleID or nil
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
+    activeRequestTag = nil
     LobbyMods.DiscardPending()
     panels = {}
   end
