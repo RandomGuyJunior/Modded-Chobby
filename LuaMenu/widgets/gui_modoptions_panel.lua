@@ -659,7 +659,9 @@ end
 --------------------------------------------------------------------------------
 -- Modoptions Window Handler
 
-local function CreateModoptionWindow()
+local activeModoptionsWindow
+local CreateModoptionWindow
+CreateModoptionWindow = function()
 	local ww, wh = Spring.GetWindowGeometry()
 
 	local modoptionsSelectionWindow = Window:New {
@@ -672,6 +674,8 @@ local function CreateModoptionWindow()
 		draggable = false,
 		classname = "main_window",
 	}
+
+	activeModoptionsWindow = modoptionsSelectionWindow
 
 	localModoptions = Spring.Utilities.CopyTable(battleLobby:GetMyBattleModoptions() or {})
 	modoptionControlNames = {}
@@ -1340,6 +1344,17 @@ function ModoptionsPanel.ReturnModoptions()
 	return modoptions
 end
 
+-- If the TEI capability arrives while Advanced Options is open, rebuild
+-- its native tabs. Preserve any unsaved modoption edits across the rebuild.
+function ModoptionsPanel.RefreshModsCapability()
+  if activeModoptionsWindow and not activeModoptionsWindow.disposed then
+    local pending = Spring.Utilities.CopyTable(localModoptions or {})
+    activeModoptionsWindow:Dispose()
+    CreateModoptionWindow()
+    localModoptions = pending
+  end
+end
+
 function ModoptionsPanel.ShowModoptions()
 	if modoptions then
 		CreateModoptionWindow()
@@ -1364,4 +1379,7 @@ function widget:Initialize()
 	VFS.Include(LUA_DIRNAME .. "widgets/chobby/headers/exports.lua", nil, VFS.RAW_FIRST)
 
 	WG.ModoptionsPanel = ModoptionsPanel
+	if WG.LobbyModsWindow then
+		WG.LobbyModsWindow.OnCapabilityChanged = ModoptionsPanel.RefreshModsCapability
+	end
 end
