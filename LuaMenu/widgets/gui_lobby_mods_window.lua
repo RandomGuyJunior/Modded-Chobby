@@ -108,17 +108,18 @@ end
 -- normal lobby dispatch or sending a chat message.
 local function onBattleExtraData(_, battleID, encoded)
   local _, currentID = currentBattle()
-  if not tonumber(battleID) then return end
+  if not tonumber(battleID) then Spring.Echo("[RandomGuyMods] extra_data invalid battleID=" .. tostring(battleID)); return end
   local ok, decoded = pcall(function()
     return json.decode(Spring.Utilities.Base64Decode(encoded))
   end)
-  if not ok or type(decoded) ~= "table" then return end
+  if not ok or type(decoded) ~= "table" then Spring.Echo("[RandomGuyMods] extra_data decode failed for battle=" .. tostring(battleID)); return end
   local enabled = false
   if type(decoded.mod_hub_capabilities) == "table" then
     for _, capability in ipairs(decoded.mod_hub_capabilities) do
       if capability == CAPABILITY then enabled = true; break end
     end
   end
+  Spring.Echo("[RandomGuyMods] extra_data battle=" .. tostring(battleID) .. " current=" .. tostring(currentID) .. " supported=" .. tostring(enabled))
   pendingCapabilities[tonumber(battleID)] = enabled
   if tostring(currentID or "") ~= tostring(battleID) then return end
   local newID = enabled and currentID or nil
@@ -138,6 +139,7 @@ local function syncListener()
     if lobby and type(lobby.commands) == "table" then
       interfaceCommands = lobby.commands
       originalExtraDataHandler = interfaceCommands["s.battle.extra_data"]
+      Spring.Echo("[RandomGuyMods] lobby command handler available=" .. tostring(type(originalExtraDataHandler) == "function"))
       if type(originalExtraDataHandler) == "function" then
         local wrapper = function(self, battleIDParam, data)
           originalExtraDataHandler(self, battleIDParam, data)
@@ -146,9 +148,12 @@ local function syncListener()
         lobby._rapidModsExtraDataWrapper = wrapper
         interfaceCommands["s.battle.extra_data"] = wrapper
       end
+    else
+      Spring.Echo("[RandomGuyMods] lobby.commands unavailable for capability interception")
     end
   end
   if battleID ~= listenerBattleID then
+    Spring.Echo("[RandomGuyMods] joined battle=" .. tostring(battleID) .. " cachedCapability=" .. tostring(battleID and pendingCapabilities[tonumber(battleID)]))
     listenerBattleID = battleID
     capabilityBattleID = (battleID and pendingCapabilities[tonumber(battleID)]) and battleID or nil
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
