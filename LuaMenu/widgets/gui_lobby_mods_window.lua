@@ -166,6 +166,9 @@ end
 function widget:Initialize()
   VFS.Include(LUA_DIRNAME.."widgets/chobby/headers/exports.lua",nil,VFS.RAW_FIRST)
   WG.LobbyModsWindow=LobbyMods
+  if WG.ModoptionsPanel and WG.ModoptionsPanel.RefreshModsCapability then
+    LobbyMods.OnCapabilityChanged = WG.ModoptionsPanel.RefreshModsCapability
+  end
   syncListener()
 end
 function widget:Shutdown()
