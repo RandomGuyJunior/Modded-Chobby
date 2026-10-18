@@ -241,7 +241,18 @@ local function rebuildSkirmishStack()
             return VFS.LoadFile(hook, VFS.ZIP)
         end)
         if source then
-            hooks[#hooks + 1] = "VFS.Include(" .. string.format("%q", hook) .. ")"
+            -- Materialize the discovered hook in the generated top-level archive.
+            -- This avoids relying on conflicting VFS lookup order at game startup.
+            local localHook = "gamedata/randomguy_modhook_" .. id .. "_unitdefs_post.lua"
+            if not writeFile(stackDir .. "/" .. localHook, source) then
+                generatedGameName = nil
+                return
+            end
+            hooks[#hooks + 1] = "Spring.Echo(" .. string.format("%q", "[RandomGuy Mod Stack] Executing " .. hook) .. ")"
+            hooks[#hooks + 1] = "VFS.Include(" .. string.format("%q", localHook) .. ")"
+            Spring.Echo("[ModsWindow] Composed UnitDef hook: " .. hook .. " into " .. localHook)
+        else
+            Spring.Echo("[ModsWindow] No optional UnitDef hook in " .. tostring(entry.rapid_tag) .. ": " .. hook)
         end
     end
     if not writeFile(stackDir .. "/gamedata/unitdefs_post.lua", table.concat(hooks, "\n") .. "\n") then
