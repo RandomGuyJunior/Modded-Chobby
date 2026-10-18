@@ -25,13 +25,114 @@ local serverCombo
 local serverSwitchPending = false
 local serverReconnectStarted = false
 local startupServerSynced = false
+local customServers = {}
+local serverEntries = {}
+local addServerWindow
+
+local function ParseServerAddress(raw)
+    if type(raw) ~= "string" then return nil end
+    local host, port = raw:match("^%s*([^:%s/]+):(%d+)%s*$")
+    if not host then host = raw:match("^%s*([^:%s/]+)%s*$"); port = "8200" end
+    local number = tonumber(port)
+    if not host or not host:match("^[%w%.%-]+$") or not number
+            or number < 1 or number > 65535 or number % 1 ~= 0 then
+        return nil
+    end
+    return string.lower(host), number
+end
+
+local function BuildServerEntries()
+    serverEntries = {
+        {label = "BAR Official", address = "server4.beyondallreason.info", port = 8200},
+        {label = "BAR Modded", address = "moddedbar.duckdns.org", port = 8200},
+    }
+    for _, server in ipairs(customServers) do
+        table.insert(serverEntries, {
+            label = server.address .. ":" .. server.port,
+            address = server.address, port = server.port,
+        })
+    end
+end
+
+local function RefreshServerCombo()
+    if not serverCombo then return end
+    BuildServerEntries()
+    local items = {}
+    for _, entry in ipairs(serverEntries) do table.insert(items, entry.label) end
+    table.insert(items, "+ Add TEI server...")
+    serverCombo.items = items
+    serverCombo:Invalidate()
+end
+
+local function SwitchToServer(address, port)
+    if not WG.LoginWindowHandler or not WG.LoginWindowHandler.SwitchServer then return end
+    serverSwitchPending = true
+    serverReconnectStarted = false
+    serverCombo:SetEnabled(false)
+    WG.LoginWindowHandler.SwitchServer(address, port)
+end
+
+local function ShowAddServerPopup()
+    if addServerWindow then return end
+    local input
+    local window = Window:New {
+        name = "addTeiServerWindow",
+        caption = "Add TEI server",
+        x = "30%", y = "30%", width = 430, height = 180,
+        resizable = false, draggable = true, parent = screen0,
+        children = {},
+    }
+    addServerWindow = window
+    local errorLabel = Label:New {
+        parent = window, x = 20, y = 70, right = 20, height = 22,
+        caption = "", align = "left",
+    }
+    Label:New {
+        parent = window, x = 20, y = 18, right = 20, height = 22,
+        caption = "TEI address (hostname or hostname:port)",
+    }
+    input = EditBox:New {
+        parent = window, x = 20, y = 43, right = 20, height = 28,
+        text = "",
+    }
+    local function Close()
+        if addServerWindow then addServerWindow:Dispose(); addServerWindow = nil end
+    end
+    Button:New {
+        parent = window, right = 20, bottom = 12, width = 95, height = 30,
+        caption = "Cancel", OnClick = {Close},
+    }
+    Button:New {
+        parent = window, right = 122, bottom = 12, width = 95, height = 30,
+        caption = "Connect",
+        OnClick = {function()
+            local address, port = ParseServerAddress(input.text)
+            if not address then
+                errorLabel:SetCaption("Enter a valid hostname and optional port (1-65535).")
+                return
+            end
+            local known = false
+            for _, entry in ipairs(serverEntries) do
+                if entry.address == address and entry.port == port then known = true; break end
+            end
+            if not known then
+                table.insert(customServers, {address = address, port = port})
+            end
+            RefreshServerCombo()
+            Close()
+            SwitchToServer(address, port)
+        end},
+    }
+end
+
 
 local function GetServerSelectionFromAddress(address)
-	address = string.lower(tostring(address or ""))
-	if address == "moddedbar.duckdns.org" then
-		return 2
-	end
-	return 1
+    address = string.lower(tostring(address or ""))
+    local port = WG.Chobby.Configuration:GetServerPort()
+    for i, entry in ipairs(serverEntries) do
+        if entry.address == address and entry.port == port then return i end
+    end
+    return nil
 end
 
 local function SyncServerComboToCurrentServer()
@@ -46,7 +147,7 @@ local function SyncServerComboToCurrentServer()
 			WG.Chobby.Configuration:GetServerAddress()
 		)
 
-	if serverCombo.selected == selected then
+	if not selected or serverCombo.selected == selected then
 		return
 	end
 
@@ -277,52 +378,31 @@ local function InitializeControls(window)
 
 	menuX = menuX + 3
 
-	serverCombo = ComboBox:New {
-		y = 2,
-		right = menuX,
-		width = 180,
-		height = 38,
-
-		items = {
-			"BAR Official",
-			"BAR Modded",
-		},
-
-		selected = selectedServer,
-
-		OnSelect = {
-		function(obj)
-			local currentAddress =
-				WG.Chobby.Configuration:GetServerAddress()
-
-			if obj.selected == 1 then
-				if currentAddress ~= "server4.beyondallreason.info" then
-					serverSwitchPending = true
-					serverCombo:SetEnabled(false)
-
-					WG.LoginWindowHandler.SwitchServer(
-						"server4.beyondallreason.info",
-						8200
-					)
-				end
-
-			elseif obj.selected == 2 then
-				if currentAddress ~= "moddedbar.duckdns.org" then
-					serverSwitchPending = true
-					serverCombo:SetEnabled(false)
-
-					WG.LoginWindowHandler.SwitchServer(
-						"moddedbar.duckdns.org",
-						8200
-					)
-				end
-			end
-		end
-	},
-
-		parent = window,
-		tooltip = "Select which BAR lobby server to connect to.",
-	}
+    BuildServerEntries()
+    local items = {}
+    for _, entry in ipairs(serverEntries) do table.insert(items, entry.label) end
+    table.insert(items, "+ Add TEI server...")
+    serverCombo = ComboBox:New {
+        y = 2, right = menuX, width = 180, height = 38,
+        items = items, selected = selectedServer or 1,
+        OnSelect = {function(obj)
+            local selection = obj.selected
+            if selection == #serverEntries + 1 then
+                SyncServerComboToCurrentServer()
+                ShowAddServerPopup()
+                return
+            end
+            local entry = serverEntries[selection]
+            if not entry then return end
+            local Configuration = WG.Chobby.Configuration
+            if Configuration:GetServerAddress() ~= entry.address
+                    or Configuration:GetServerPort() ~= entry.port then
+                SwitchToServer(entry.address, entry.port)
+            end
+        end},
+        parent = window,
+        tooltip = "Select a BAR/TEI server or add your own.",
+    }
 
 	menuX = menuX + 180
 
@@ -667,6 +747,23 @@ function widget:Update()
 			onlineCountLastUpdate = now
 		end
 	end
+end
+
+function widget:GetConfigData()
+    return {customServers = customServers}
+end
+
+function widget:SetConfigData(data)
+    customServers = {}
+    if type(data) == "table" and type(data.customServers) == "table" then
+        for _, server in ipairs(data.customServers) do
+            if type(server) == "table" and type(server.address) == "string" then
+                local host, port = ParseServerAddress(server.address .. ":" .. tostring(server.port))
+                if host then table.insert(customServers, {address = host, port = port}) end
+            end
+        end
+    end
+    RefreshServerCombo()
 end
 
 function widget:Initialize()
