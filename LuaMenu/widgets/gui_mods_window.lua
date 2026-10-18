@@ -208,6 +208,47 @@ local function rebuildSkirmishStack()
 		return
 	end
 
+    -- Compose the shared UnitDef post hook explicitly. Dependencies determine
+    -- archive availability, but do not merge same-path Lua files.
+    local basePost = VFS.UseArchive(foundation, function()
+        return VFS.LoadFile("gamedata/unitdefs_post.lua", VFS.ZIP)
+    end)
+    if not basePost then
+        Spring.Echo("[ModsWindow] Missing Hosting gamedata/unitdefs_post.lua")
+        generatedGameName = nil
+        return
+    end
+    Spring.CreateDir(stackDir .. "/gamedata")
+    if not writeFile(stackDir .. "/gamedata/randomguy_foundation_unitdefs_post.lua", basePost) then
+        generatedGameName = nil
+        return
+    end
+    local hooks = {
+        "-- Composed by RandomGuy Mod Hub. Hosting always executes first.",
+        "VFS.Include('gamedata/randomguy_foundation_unitdefs_post.lua')",
+    }
+    for _, entry in ipairs(active) do
+        local id = tostring(entry.id or "")
+        if not id:match("^[%w_%-]+$") then
+            Spring.Echo("[ModsWindow] Invalid mod id for hook: " .. id)
+            generatedGameName = nil
+            return
+        end
+        -- Optional mods export uniquely named hooks to avoid VFS collisions.
+        -- Missing hooks are normal; mods that add only content need no hook.
+        local hook = "modhooks/" .. id .. "/unitdefs_post.lua"
+        local source = VFS.UseArchive(installedArchive(entry.rapid_tag), function()
+            return VFS.LoadFile(hook, VFS.ZIP)
+        end)
+        if source then
+            hooks[#hooks + 1] = "VFS.Include(" .. string.format("%q", hook) .. ")"
+        end
+    end
+    if not writeFile(stackDir .. "/gamedata/unitdefs_post.lua", table.concat(hooks, "\n") .. "\n") then
+        generatedGameName = nil
+        return
+    end
+
 	generatedGameName = stackName
 	Spring.Echo("[ModsWindow] Skirmish mod stack: " .. stackName)
 end
