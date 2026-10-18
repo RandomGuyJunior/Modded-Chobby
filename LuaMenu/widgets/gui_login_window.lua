@@ -48,7 +48,7 @@ local function SaveCurrentProfile(Configuration)
 end
 
 local function LoadServerProfile(Configuration, address, port)
-    local profile = serverLoginProfiles[ServerKey(address, port)]
+    local profile = Configuration.rememberPassword and serverLoginProfiles[ServerKey(address, port)] or nil
     Configuration.userName = profile and profile.userName or false
     Configuration.password = profile and profile.password or false
     return profile ~= nil
@@ -463,6 +463,11 @@ end
 
 function widget:GetConfigData()
     local saved = {}
+    local Configuration = WG.Chobby and WG.Chobby.Configuration
+    if not Configuration or not Configuration.rememberPassword then
+        serverLoginProfiles = {}
+        return {serverLoginProfiles = {}}
+    end
     for key, profile in pairs(serverLoginProfiles) do
         if type(profile) == "table" and type(profile.userName) == "string"
                 and type(profile.password) == "string" and profile.password ~= "" then
