@@ -45,6 +45,7 @@ local function BuildServerEntries()
     serverEntries = {
         {label = "BAR Official", address = "server4.beyondallreason.info", port = 8200},
         {label = "BAR Modded", address = "moddedbar.duckdns.org", port = 8200},
+        {label = "BAR SolarGang", address = "server.solargang.bar", port = 8200},
     }
     for _, server in ipairs(customServers) do
         table.insert(serverEntries, {
