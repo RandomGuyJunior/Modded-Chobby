@@ -495,6 +495,13 @@ function widget:Initialize()
 	CHOBBY_DIR = LUA_DIRNAME .. "widgets/chobby/"
 	VFS.Include(LUA_DIRNAME .. "widgets/chobby/headers/exports.lua", nil, VFS.RAW_FIRST)
 
+    -- Once server profiles exist, never autologin with the global credentials
+    -- left over from another server after restarting Chobby.
+    local Configuration = WG.Chobby and WG.Chobby.Configuration
+    if Configuration and next(serverLoginProfiles) then
+        LoadServerProfile(Configuration, Configuration:GetServerAddress(), Configuration:GetServerPort())
+    end
+
 	LoginWindowHandler.TrySimpleSteamLogin = TrySimpleSteamLogin
 
 	WG.Delay(InitializeListeners, 0.1)
