@@ -25,6 +25,35 @@ local loginAcceptedFunction
 local registerRecieved = false
 
 local serverSwitchInProgress = false
+-- Persisted by widget config. Each endpoint has independent credentials.
+local serverLoginProfiles = {}
+local authenticatedServerKey
+
+local function ServerKey(address, port)
+    return string.lower(tostring(address or "")) .. ":" .. tostring(port or 8200)
+end
+
+local function CurrentServerKey(Configuration)
+    return ServerKey(Configuration:GetServerAddress(), Configuration:GetServerPort())
+end
+
+local function SaveCurrentProfile(Configuration)
+    local key = CurrentServerKey(Configuration)
+    if Configuration.rememberPassword and Configuration.userName and
+            Configuration.password and Configuration.password ~= "" then
+        serverLoginProfiles[key] = {userName = Configuration.userName, password = Configuration.password}
+    else
+        serverLoginProfiles[key] = nil
+    end
+end
+
+local function LoadServerProfile(Configuration, address, port)
+    local profile = serverLoginProfiles[ServerKey(address, port)]
+    Configuration.userName = profile and profile.userName or false
+    Configuration.password = profile and profile.password or false
+    return profile ~= nil
+end
+
 
 -- WG interface
 local LoginWindowHandler = {}
@@ -205,6 +234,8 @@ local function InitializeListeners()
 		isWaitingInQueue = false
 		Configuration.firstLoginEver = false
 		WG.Analytics.SendOnetimeEvent("lobby:logged_in")
+		SaveCurrentProfile(Configuration)
+		authenticatedServerKey = CurrentServerKey(Configuration)
 
 		if Configuration.canAuthenticateWithSteam and Configuration.wantAuthenticateWithSteam then
 			Configuration.steamLinkComplete = true
@@ -350,7 +381,12 @@ function LoginWindowHandler.SwitchServer(address, port)
 
 	serverSwitchInProgress = true
 
-	Configuration:SetRuntimeServer(address, port)
+    -- Capture the authenticated account before switching endpoints.
+    if authenticatedServerKey == CurrentServerKey(Configuration) then
+        SaveCurrentProfile(Configuration)
+    end
+    local hasProfile = LoadServerProfile(Configuration, address, port)
+    Configuration:SetRuntimeServer(address, port)
 
 	local function reconnect()
 		Spring.Echo("SwitchServer: reconnecting to", address, port)
@@ -359,12 +395,12 @@ function LoginWindowHandler.SwitchServer(address, port)
 			Configuration.autoLogin
 			or Configuration.rememberPassword
 
-		if shouldAutoLogin and Configuration.userName then
+		if shouldAutoLogin and hasProfile and Configuration.userName then
 			if not TrySimpleSteamLogin() then
 				TrySimpleLogin()
 			end
 		else
-			WG.LoginWindowHandler.TryLoginMultiplayer()
+			WG.LoginWindowHandler.TryLogin()
 		end
 
 		serverSwitchInProgress = false
@@ -402,7 +438,7 @@ function LoginWindowHandler.QueueRegister(name, password, email)
 end
 
 function LoginWindowHandler.TryLoginMultiplayer(name, password)
-	Spring.Echo("LoginWindowHandler.TryLoginMultiplayer",name, password)
+	Spring.Echo("LoginWindowHandler.TryLoginMultiplayer", tostring(name or ""))
 	if wantLoginStatus[lobby:GetConnectionStatus()] then
 		if (not TrySimpleSteamLogin()) and (not TrySimpleLogin()) then
 			local loginWindow = GetNewLoginWindow(nil, "LoginWindowHandler:TryLoginMultiplayer")
@@ -424,6 +460,31 @@ end
 -- Widget Interface
 
 
+
+function widget:GetConfigData()
+    local saved = {}
+    for key, profile in pairs(serverLoginProfiles) do
+        if type(profile) == "table" and type(profile.userName) == "string"
+                and type(profile.password) == "string" and profile.password ~= "" then
+            saved[key] = {userName = profile.userName, password = profile.password}
+        end
+    end
+    return {serverLoginProfiles = saved}
+end
+
+function widget:SetConfigData(data)
+    serverLoginProfiles = {}
+    if type(data) ~= "table" or type(data.serverLoginProfiles) ~= "table" then
+        return
+    end
+    for key, profile in pairs(data.serverLoginProfiles) do
+        if type(key) == "string" and type(profile) == "table"
+                and type(profile.userName) == "string"
+                and type(profile.password) == "string" then
+            serverLoginProfiles[key] = {userName = profile.userName, password = profile.password}
+        end
+    end
+end
 
 function widget:Initialize()
 	CHOBBY_DIR = LUA_DIRNAME .. "widgets/chobby/"
