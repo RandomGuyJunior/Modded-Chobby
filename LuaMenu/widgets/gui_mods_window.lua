@@ -252,6 +252,11 @@ local function rebuildSkirmishStack()
             hooks[#hooks + 1] = "VFS.Include(" .. string.format("%q", localHook) .. ")"
             Spring.Echo("[ModsWindow] Composed UnitDef hook: " .. hook .. " into " .. localHook)
         else
+            if entry.requires_unitdefs_post_hook == true then
+                Spring.Echo("[ModsWindow] ERROR: required UnitDef hook is missing from installed archive " .. tostring(entry.rapid_tag) .. ": " .. hook)
+                generatedGameName = nil
+                return
+            end
             Spring.Echo("[ModsWindow] No optional UnitDef hook in " .. tostring(entry.rapid_tag) .. ": " .. hook)
         end
     end
