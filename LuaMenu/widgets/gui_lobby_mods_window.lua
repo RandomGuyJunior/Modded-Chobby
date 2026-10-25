@@ -300,8 +300,7 @@ local function requestBattleCapabilities()
   if requestedBattleID ~= battleID or requestedLobby ~= lobby then
     requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID = battleID, lobby, 0, 0, nil
   end
-  if respondedBattleID == battleID and not LobbyMods.IsAvailable() then return end
-  if respondedBattleID ~= battleID and requestAttempts >= 6 then return end
+  if not LobbyMods.IsAvailable() and requestAttempts >= 6 then return end
   if LobbyMods.IsAvailable() then
     inventoryRefreshTicks = inventoryRefreshTicks + 1
     -- Refresh inventory about every 10 seconds while in a supported battle.
