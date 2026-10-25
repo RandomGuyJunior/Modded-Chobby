@@ -14,7 +14,6 @@ local pendingCapabilities = {}
 local modStates = {}
 local panels = {}
 local activeRequestTag
-local statusQueryBattleID
 local pendingMods = {}
 local pendingOrder = {}
 local function refreshRows()
@@ -197,44 +196,6 @@ local function onBattleChat(client, sender, message)
   refreshRows()
 end
 
--- A private snapshot is authoritative only when sent by the battle founder.
--- Downloaded is different from activated; installation alone does not mount
--- a mod in the running game.
-local function onPrivateChat(client, sender, message)
-  if type(message) ~= "string" then return end
-  local tags = message:match("^%[RapidModsState%] downloaded=(.*)$")
-  if not tags then return end
-  local _, _, battle = currentBattle()
-  if not battle or tostring(sender) ~= tostring(battle.founder or "") then return end
-  local downloaded = {}
-  for tag in tags:gmatch("[^,]+") do
-    if tag:match("^[%w_%-]+:[%w_%-]+$") then downloaded[tag] = true end
-  end
-  for tag, _ in pairs(modStates) do
-    if modStates[tag] == "Downloaded on SPADS" then modStates[tag] = nil end
-  end
-  for tag, _ in pairs(downloaded) do
-    if modStates[tag] ~= "Installing" and modStates[tag] ~= "Requested (await SPADS result)" then
-      modStates[tag] = "Downloaded on SPADS"
-    end
-  end
-  Spring.Echo("[RandomGuyMods] SPADS downloaded mod snapshot received")
-  refreshRows()
-end
-
-local function requestModStatus()
-  local lobby, battleID, battle = currentBattle()
-  if not LobbyMods.IsAvailable() or statusQueryBattleID == battleID or not battle or not battle.founder then return end
-  if not lobby or type(lobby.SayPrivate) ~= "function" then return end
-  local ok, err = pcall(function() lobby:SayPrivate(battle.founder, "!modstatus") end)
-  if ok then
-    statusQueryBattleID = battleID
-    Spring.Echo("[RandomGuyMods] requested SPADS downloaded mod snapshot")
-  else
-    Spring.Echo("[RandomGuyMods] status snapshot request failed: " .. tostring(err))
-  end
-end
-
 -- The standard Chobby Spring interface already parses s.battle.extra_data,
 -- but discards it. Wrap the existing command handler without changing
 -- normal lobby dispatch or sending a chat message.
@@ -250,6 +211,21 @@ local function onBattleExtraData(_, battleID, encoded)
     for _, capability in ipairs(decoded.mod_hub_capabilities) do
       if capability == CAPABILITY then enabled = true; break end
     end
+  end
+  if tostring(currentID or "") == tostring(battleID) and enabled and type(decoded.mod_hub_downloaded) == "table" then
+    local downloaded = {}
+    for _, tag in ipairs(decoded.mod_hub_downloaded) do
+      if type(tag) == "string" and tag:match("^[%w_%-]+:[%w_%-]+$") then downloaded[tag] = true end
+    end
+    for tag, state in pairs(modStates) do
+      if state == "Downloaded on SPADS" or state == "Installed" then modStates[tag] = nil end
+    end
+    for tag in pairs(downloaded) do
+      if modStates[tag] ~= "Installing" and modStates[tag] ~= "Requested (await SPADS result)" then
+        modStates[tag] = "Downloaded on SPADS"
+      end
+    end
+    refreshRows()
   end
   Spring.Echo("[RandomGuyMods] extra_data battle=" .. tostring(battleID) .. " current=" .. tostring(currentID) .. " supported=" .. tostring(enabled))
   if tostring(currentID or "") == tostring(battleID) then respondedBattleID = battleID end
@@ -276,15 +252,13 @@ local function syncListener()
       originalCommandGetter = lobby._GetCommandFunction
       local wrappedGetter = function(self, cmdName)
         local handler, pattern = originalCommandGetter(self, cmdName)
-        if (cmdName ~= "s.battle.extra_data" and cmdName ~= "SAIDBATTLE" and cmdName ~= "SAIDBATTLEEX" and cmdName ~= "SAIDPRIVATE") or type(handler) ~= "function" then
+        if (cmdName ~= "s.battle.extra_data" and cmdName ~= "SAIDBATTLE" and cmdName ~= "SAIDBATTLEEX") or type(handler) ~= "function" then
           return handler, pattern
         end
         return function(client, battleIDParam, data)
           handler(client, battleIDParam, data)
           if cmdName == "s.battle.extra_data" then
             onBattleExtraData(client, battleIDParam, data)
-          elseif cmdName == "SAIDPRIVATE" then
-            onPrivateChat(client, battleIDParam, data)
           else
             onBattleChat(client, battleIDParam, data)
           end
@@ -302,7 +276,6 @@ local function syncListener()
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
     activeRequestTag = nil
-    statusQueryBattleID = nil
     LobbyMods.DiscardPending()
     panels = {}
   end
@@ -336,7 +309,7 @@ end
 local frames=0
 function widget:Update()
   frames=frames+1
-  if frames>=15 then frames=0; syncListener(); requestBattleCapabilities(); requestModStatus() end
+  if frames>=15 then frames=0; syncListener(); requestBattleCapabilities() end
 end
 
 function widget:Initialize()
@@ -347,7 +320,7 @@ function widget:Initialize()
   end
   syncListener()
   requestBattleCapabilities()
-  requestModStatus()
+  
 end
 function widget:Shutdown()
   if hookedLobby and originalCommandGetter and hookedLobby._GetCommandFunction == hookedLobby._rapidModsGetCommandFunction then
