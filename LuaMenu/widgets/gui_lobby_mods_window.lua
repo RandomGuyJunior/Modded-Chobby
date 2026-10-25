@@ -13,6 +13,7 @@ local requestedBattleID, requestedLobby, requestAttempts, requestTicks, responde
 local pendingCapabilities = {}
 local modStates = {}
 local inventoryKnown = false
+local inventoryRefreshTicks = 0
 local panels = {}
 local activeRequestTag
 local pendingMods = {}
@@ -280,6 +281,7 @@ local function syncListener()
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
     inventoryKnown = false
+    inventoryRefreshTicks = 0
     activeRequestTag = nil
     LobbyMods.DiscardPending()
     panels = {}
@@ -298,7 +300,18 @@ local function requestBattleCapabilities()
   if requestedBattleID ~= battleID or requestedLobby ~= lobby then
     requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID = battleID, lobby, 0, 0, nil
   end
-  if respondedBattleID == battleID or requestAttempts >= 6 then return end
+  if respondedBattleID == battleID and not LobbyMods.IsAvailable() then return end
+  if respondedBattleID ~= battleID and requestAttempts >= 6 then return end
+  if LobbyMods.IsAvailable() then
+    inventoryRefreshTicks = inventoryRefreshTicks + 1
+    -- Refresh inventory about every 10 seconds while in a supported battle.
+    -- This also recovers when the first response precedes SPADS registration.
+    if inventoryRefreshTicks < 20 then return end
+    inventoryRefreshTicks = 0
+    local ok = pcall(function() lobby:_SendCommand("c.battle.extra_data") end)
+    if not ok then Spring.Echo("[RandomGuyMods] inventory refresh failed") end
+    return
+  end
   requestTicks = requestTicks + 1
   if requestAttempts > 0 and requestTicks < 4 then return end
   requestTicks = 0
