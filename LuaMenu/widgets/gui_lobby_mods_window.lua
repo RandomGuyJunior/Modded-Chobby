@@ -12,6 +12,7 @@ local capabilityBattleID
 local requestedBattleID, requestedLobby, requestAttempts, requestTicks, respondedBattleID
 local pendingCapabilities = {}
 local modStates = {}
+local inventoryKnown = false
 local panels = {}
 local activeRequestTag
 local pendingMods = {}
@@ -21,9 +22,9 @@ local function refreshRows()
     if panel.entries then
       for tag, controls in pairs(panel.entries) do
         local state = modStates[tag]
-        local locked = state == "Installing" or state == "Requested (await SPADS result)" or (state == "Installed" or state == "Downloaded on SPADS")
-        controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or "Server status unknown")
-        controls.button:SetCaption(locked and ((state == "Installed" or state == "Downloaded on SPADS") and "Downloaded" or "Waiting") or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
+        local locked = not inventoryKnown or state == "Installing" or state == "Requested (await SPADS result)" or (state == "Installed" or state == "Downloaded on SPADS")
+        controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or (inventoryKnown and "Not downloaded on SPADS" or "Checking SPADS inventory..."))
+        controls.button:SetCaption(locked and ((state == "Installed" or state == "Downloaded on SPADS") and "Downloaded" or (inventoryKnown and "Waiting" or "Checking")) or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
         controls.button:SetEnabled(not locked)
       end
     end
@@ -65,6 +66,7 @@ end
 
 function LobbyMods.ApplyPending()
   if #pendingOrder == 0 then return end
+  if not inventoryKnown then return end
   if not LobbyMods.IsAvailable() then
     Spring.Echo("[RandomGuyMods] pending mods discarded: unsupported battle")
     LobbyMods.DiscardPending()
@@ -79,7 +81,8 @@ function LobbyMods.ApplyPending()
   -- downloader and will reject concurrent !mod requests. Only one can be
   -- queued per Apply operation.
   for _, tag in ipairs(pendingOrder) do
-    if pendingMods[tag] then
+    if not inventoryKnown then return end
+  if pendingMods[tag] then
       local ok, err = pcall(function() lobby:SayBattle("!mod " .. tag) end)
       if ok then
         modStates[tag] = "Requested (await SPADS result)"
@@ -101,7 +104,7 @@ local function togglePending(tag, button, stateLabel, status)
     pendingMods[tag] = nil
     pendingOrder = {}
     button:SetCaption("Install")
-    stateLabel:SetCaption(modStates[tag] or "Server status unknown")
+    stateLabel:SetCaption(modStates[tag] or (inventoryKnown and "Not downloaded on SPADS" or "Checking SPADS inventory..."))
     status:SetCaption("Pending install cancelled. Click Apply to submit any remaining changes.")
   else
     -- SPADS supports one Rapid download at a time.
@@ -158,7 +161,7 @@ function LobbyMods.CreateTab()
         caption=entry.rapid_tag, align="left", font={size=12}}
       local tag = entry.rapid_tag
       local stateLabel = Label:New {parent=item, x=12, y=58, right=135, height=20,
-        caption=pendingMods[tag] and "Pending Apply" or (modStates[tag] or "Server status unknown"), align="left", font={size=12}}
+        caption=pendingMods[tag] and "Pending Apply" or (modStates[tag] or (inventoryKnown and "Not downloaded on SPADS" or "Checking SPADS inventory...")), align="left", font={size=12}}
       local button = Button:New {parent=item, right=10, y=15, width=110, height=35,
         caption=pendingMods[tag] and "Undo" or "Install"}
       button.OnClick = {function() togglePending(tag, button, stateLabel, status) end}
@@ -225,6 +228,7 @@ local function onBattleExtraData(_, battleID, encoded)
         modStates[tag] = "Downloaded on SPADS"
       end
     end
+    inventoryKnown = true
     refreshRows()
   end
   Spring.Echo("[RandomGuyMods] extra_data battle=" .. tostring(battleID) .. " current=" .. tostring(currentID) .. " supported=" .. tostring(enabled))
@@ -275,6 +279,7 @@ local function syncListener()
     capabilityBattleID = (battleID and pendingCapabilities[tonumber(battleID)]) and battleID or nil
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
+    inventoryKnown = false
     activeRequestTag = nil
     LobbyMods.DiscardPending()
     panels = {}
