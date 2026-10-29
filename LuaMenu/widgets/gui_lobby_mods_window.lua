@@ -13,6 +13,7 @@ local requestedBattleID, requestedLobby, requestAttempts, requestTicks, responde
 local pendingCapabilities = {}
 local modStates = {}
 local inventoryKnown = false
+local enabledKnown = false
 local inventoryRefreshTicks = 0
 local panels = {}
 local activeRequestTag
@@ -23,9 +24,9 @@ local function refreshRows()
     if panel.entries then
       for tag, controls in pairs(panel.entries) do
         local state = modStates[tag]
-        local locked = not inventoryKnown or state == "Installing" or state == "Requested (await SPADS result)" or (state == "Installed" or state == "Downloaded on SPADS")
-        controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or (inventoryKnown and "Not downloaded on SPADS" or "Checking SPADS inventory..."))
-        controls.button:SetCaption(locked and ((state == "Installed" or state == "Downloaded on SPADS") and "Downloaded" or (inventoryKnown and "Waiting" or "Checking")) or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
+        local locked = not inventoryKnown or state == "Enabled in battle" or state == "Installing" or state == "Requested (await SPADS result)" or (state == "Installed" or state == "Downloaded on SPADS")
+        controls.stateLabel:SetCaption(pendingMods and pendingMods[tag] and "Pending Apply" or state or (inventoryKnown and (enabledKnown and "Not installed" or "Checking enabled mods...") or "Checking SPADS inventory..."))
+        controls.button:SetCaption(locked and ((state == "Enabled in battle") and "Enabled" or (state == "Installed" or state == "Downloaded on SPADS") and "Downloaded" or (inventoryKnown and "Waiting" or "Checking")) or (pendingMods and pendingMods[tag] and "Undo" or "Install"))
         controls.button:SetEnabled(not locked)
       end
     end
@@ -122,7 +123,7 @@ local function togglePending(tag, button, stateLabel, status)
         end
       end
     end
-    if modStates[tag] == "Installed" or modStates[tag] == "Downloaded on SPADS" or modStates[tag] == "Installing" or modStates[tag] == "Requested (await SPADS result)" then return end
+    if modStates[tag] == "Installed" or modStates[tag] == "Downloaded on SPADS" or modStates[tag] == "Enabled in battle" or modStates[tag] == "Installing" or modStates[tag] == "Requested (await SPADS result)" then return end
     pendingMods[tag] = true
     pendingOrder = {tag}
     button:SetCaption("Undo")
@@ -232,6 +233,18 @@ local function onBattleExtraData(_, battleID, encoded)
     inventoryKnown = true
     refreshRows()
   end
+  if tostring(currentID or "") == tostring(battleID) and enabled and type(decoded.mod_hub_enabled) == "table" then
+    local active = {}
+    for _, tag in ipairs(decoded.mod_hub_enabled) do
+      if type(tag) == "string" and tag:match("^[%w_%-]+:[%w_%-]+$") then active[tag] = true end
+    end
+    for tag, state in pairs(modStates) do
+      if state == "Enabled in battle" then modStates[tag] = "Downloaded on SPADS" end
+    end
+    for tag in pairs(active) do modStates[tag] = "Enabled in battle" end
+    enabledKnown = true
+    refreshRows()
+  end
   Spring.Echo("[RandomGuyMods] extra_data battle=" .. tostring(battleID) .. " current=" .. tostring(currentID) .. " supported=" .. tostring(enabled))
   if tostring(currentID or "") == tostring(battleID) then respondedBattleID = battleID end
   pendingCapabilities[tonumber(battleID)] = enabled
@@ -281,6 +294,7 @@ local function syncListener()
     if LobbyMods.OnCapabilityChanged then LobbyMods.OnCapabilityChanged() end
     modStates = {}
     inventoryKnown = false
+    enabledKnown = false
     inventoryRefreshTicks = 0
     activeRequestTag = nil
     LobbyMods.DiscardPending()
