@@ -226,9 +226,18 @@ local function onBattleExtraData(_, battleID, encoded)
       if state == "Downloaded on SPADS" or state == "Installed" then modStates[tag] = nil end
     end
     for tag in pairs(downloaded) do
-      if modStates[tag] ~= "Installing" and modStates[tag] ~= "Requested (await SPADS result)" then
-        modStates[tag] = "Downloaded on SPADS"
+      -- TEI's host-authorized inventory is authoritative. A missed battle
+      -- chat completion must not leave a mod stuck at Requested/Installing.
+      modStates[tag] = "Downloaded on SPADS"
+      if activeRequestTag == tag then activeRequestTag = nil end
+      if pendingMods[tag] then pendingMods[tag] = nil end
+    end
+    if #pendingOrder > 0 then
+      local retained = {}
+      for _, tag in ipairs(pendingOrder) do
+        if pendingMods[tag] then retained[#retained + 1] = tag end
       end
+      pendingOrder = retained
     end
     inventoryKnown = true
     refreshRows()
